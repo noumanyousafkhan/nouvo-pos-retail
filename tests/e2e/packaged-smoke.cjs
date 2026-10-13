@@ -207,6 +207,8 @@ async function main() {
     await page.getByRole('link', { name: 'Accounting' }).click({ force: true });
     await page.getByRole('heading', { name: 'Accounting ledger' }).waitFor();
     await page.getByRole('heading', { name: 'Trial balance' }).waitFor();
+    await page.getByText('Balance sheet', { exact: false }).waitFor();
+    await page.getByRole('heading', { name: 'Cash movement statement' }).waitFor();
     await page.getByRole('heading', { name: 'Manual journal' }).waitFor();
     const manualRows = page.locator('.manual-journal-line:not(.manual-journal-line--heading)');
     const cashAccountId = await manualRows
@@ -244,7 +246,9 @@ async function main() {
     await page.getByRole('heading', { name: 'Synchronization' }).waitFor();
     await page.getByRole('heading', { name: 'Central server connection' }).waitFor();
     console.log('PASS packaged sandboxed launch, first-run owner setup and secure preload bridge');
-    console.log('PASS packaged dashboard and accounting trial balance/income statement UI');
+    console.log(
+      'PASS packaged dashboard, trial balance, income statement, balance sheet and cash movement UI',
+    );
     console.log('PASS packaged manual journal posting and reversal dialog');
     console.log('PASS packaged sync configuration and diagnostics UI');
   } finally {

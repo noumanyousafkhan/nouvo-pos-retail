@@ -14,6 +14,23 @@ const accounts = ref<AccountingAccount[]>([]);
 const journals = ref<JournalSummary[]>([]);
 const trialBalance = ref<TrialBalanceRow[]>([]);
 const incomeStatement = ref<IncomeStatement | null>(null);
+const balanceSheet = ref<{
+  assetsMinor: number;
+  liabilitiesMinor: number;
+  equityMinor: number;
+  balanced: boolean;
+} | null>(null);
+const cashMovement = ref<{
+  inflowMinor: number;
+  outflowMinor: number;
+  netChangeMinor: number;
+  bySource: {
+    sourceType: string;
+    inflowMinor: number;
+    outflowMinor: number;
+    netChangeMinor: number;
+  }[];
+} | null>(null);
 const today = new Date().toISOString().slice(0, 10);
 const asOfDate = ref(today);
 const periodEnd = ref(today);
@@ -57,20 +74,28 @@ async function refresh() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [accountRows, journalRows, settings, balanceRows, incomeRows] = await Promise.all([
-      window.nouvo.listAccountingAccounts(),
-      window.nouvo.listAccountingJournals(),
-      window.nouvo.getBusinessSettings(),
-      window.nouvo.getAccountingTrialBalance(asOfDate.value),
-      window.nouvo.getAccountingIncomeStatement({
-        startDate: periodStart.value,
-        endDate: periodEnd.value,
-      }),
-    ]);
+    const [accountRows, journalRows, settings, balanceRows, incomeRows, sheet, cashRows] =
+      await Promise.all([
+        window.nouvo.listAccountingAccounts(),
+        window.nouvo.listAccountingJournals(),
+        window.nouvo.getBusinessSettings(),
+        window.nouvo.getAccountingTrialBalance(asOfDate.value),
+        window.nouvo.getAccountingIncomeStatement({
+          startDate: periodStart.value,
+          endDate: periodEnd.value,
+        }),
+        window.nouvo.getAccountingBalanceSheet(asOfDate.value),
+        window.nouvo.getAccountingCashMovementStatement({
+          startDate: periodStart.value,
+          endDate: periodEnd.value,
+        }),
+      ]);
     accounts.value = accountRows;
     journals.value = journalRows;
     trialBalance.value = balanceRows;
     incomeStatement.value = incomeRows;
+    balanceSheet.value = sheet;
+    cashMovement.value = cashRows;
     currencyCode.value = (settings as BusinessSettings).currencyCode;
   } catch (error) {
     errorMessage.value =
@@ -248,6 +273,70 @@ onMounted(async () => {
           <small>Revenue minus expenses</small>
         </BaseCard>
       </section>
+      <section class="accounting-summary-grid">
+        <BaseCard>
+          <span>Balance sheet — assets</span
+          ><strong>{{ money(balanceSheet?.assetsMinor ?? 0) }}</strong>
+          <small>Posted balances through {{ asOfDate }}</small>
+        </BaseCard>
+        <BaseCard>
+          <span>Liabilities</span><strong>{{ money(balanceSheet?.liabilitiesMinor ?? 0) }}</strong>
+          <small>Posted liability accounts</small>
+        </BaseCard>
+        <BaseCard>
+          <span>Equity + retained earnings</span
+          ><strong>{{ money(balanceSheet?.equityMinor ?? 0) }}</strong>
+          <small>{{
+            balanceSheet?.balanced
+              ? 'Assets equal liabilities plus equity'
+              : 'Out of balance — review ledger'
+          }}</small>
+        </BaseCard>
+      </section>
+      <BaseCard class="accounting-panel">
+        <header class="accounting-panel-heading">
+          <div>
+            <h2>Cash movement statement</h2>
+            <p>
+              Cash and non-cash clearing account movements for {{ periodStart }} through
+              {{ periodEnd }}. This is a ledger cash-movement summary, not a full indirect-method
+              cash-flow statement.
+            </p>
+          </div>
+          <span class="cash-session-count">Net {{ money(cashMovement?.netChangeMinor ?? 0) }}</span>
+        </header>
+        <section class="accounting-summary-grid">
+          <BaseCard
+            ><span>Inflows</span
+            ><strong>{{ money(cashMovement?.inflowMinor ?? 0) }}</strong></BaseCard
+          >
+          <BaseCard
+            ><span>Outflows</span
+            ><strong>{{ money(cashMovement?.outflowMinor ?? 0) }}</strong></BaseCard
+          >
+        </section>
+        <div v-if="cashMovement?.bySource.length" class="reports-table-wrap">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Inflow</th>
+                <th>Outflow</th>
+                <th>Net change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in cashMovement.bySource" :key="row.sourceType">
+                <td>{{ row.sourceType }}</td>
+                <td>{{ money(row.inflowMinor) }}</td>
+                <td>{{ money(row.outflowMinor) }}</td>
+                <td>{{ money(row.netChangeMinor) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="reports-empty">No cash or clearing movements in this period.</div>
+      </BaseCard>
       <BaseCard class="accounting-panel">
         <header class="accounting-panel-heading">
           <div>

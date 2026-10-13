@@ -440,6 +440,77 @@ export class AccountingService {
     };
   }
 
+  getBalanceSheet(asOfDate: string) {
+    if (!this.isValidDate(asOfDate))
+      throw new Error('Balance sheet date must be a valid YYYY-MM-DD date.');
+    this.ensureChartOfAccounts();
+    const currency = this.database
+      .prepare('SELECT currency_code AS currencyCode FROM stores WHERE id=?')
+      .get(this.storeId) as { currencyCode: string } | undefined;
+    if (!currency) throw new Error('Store currency is not configured.');
+    const rows = this.database
+      .prepare(
+        'SELECT a.account_type AS accountType, COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.debit_minor ELSE 0 END),0) AS debits, COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.credit_minor ELSE 0 END),0) AS credits FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id=a.id LEFT JOIN journal_entries je ON je.id=jl.journal_entry_id AND je.store_id=a.store_id AND substr(je.posted_at,1,10)<=? WHERE a.store_id=? GROUP BY a.id',
+      )
+      .all(asOfDate, this.storeId) as { accountType: string; debits: number; credits: number }[];
+    let assetsMinor = 0,
+      liabilitiesMinor = 0,
+      equityMinor = 0;
+    for (const row of rows) {
+      const net = row.debits - row.credits;
+      if (row.accountType === 'asset') assetsMinor += net;
+      else if (row.accountType === 'liability') liabilitiesMinor -= net;
+      else if (row.accountType === 'equity') equityMinor -= net;
+      else if (row.accountType === 'income') equityMinor += row.credits - row.debits;
+      else if (row.accountType === 'expense') equityMinor -= net;
+    }
+    return {
+      asOfDate,
+      currencyCode: currency.currencyCode,
+      assetsMinor,
+      liabilitiesMinor,
+      equityMinor,
+      balanced: assetsMinor === liabilitiesMinor + equityMinor,
+    };
+  }
+
+  getCashMovementStatement(startDate: string, endDate: string) {
+    if (!this.isValidDate(startDate) || !this.isValidDate(endDate) || startDate > endDate)
+      throw new Error(
+        'Cash movement statement requires valid dates with start date on or before end date.',
+      );
+    const currency = this.database
+      .prepare('SELECT currency_code AS currencyCode FROM stores WHERE id=?')
+      .get(this.storeId) as { currencyCode: string } | undefined;
+    if (!currency) throw new Error('Store currency is not configured.');
+    const rows = this.database
+      .prepare(
+        "SELECT je.source_type AS sourceType, COALESCE(SUM(jl.debit_minor),0) AS inflow, COALESCE(SUM(jl.credit_minor),0) AS outflow FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.store_id=? AND a.store_id=? AND a.code IN ('1000','1010') AND substr(je.posted_at,1,10) BETWEEN ? AND ? GROUP BY je.source_type ORDER BY je.source_type",
+      )
+      .all(this.storeId, this.storeId, startDate, endDate) as {
+      sourceType: string;
+      inflow: number;
+      outflow: number;
+    }[];
+    const bySource = rows.map((row) => ({
+      sourceType: row.sourceType,
+      inflowMinor: row.inflow,
+      outflowMinor: row.outflow,
+      netChangeMinor: row.inflow - row.outflow,
+    }));
+    const inflowMinor = bySource.reduce((sum, row) => sum + row.inflowMinor, 0);
+    const outflowMinor = bySource.reduce((sum, row) => sum + row.outflowMinor, 0);
+    return {
+      startDate,
+      endDate,
+      currencyCode: currency.currencyCode,
+      inflowMinor,
+      outflowMinor,
+      netChangeMinor: inflowMinor - outflowMinor,
+      bySource,
+    };
+  }
+
   postManualJournal(input: ManualJournalInput): string {
     this.ensureChartOfAccounts();
     if (input.lines.length < 2 || input.lines.length > 50)

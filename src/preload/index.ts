@@ -60,6 +60,10 @@ const api: NouvoApi = Object.freeze({
     ipcRenderer.invoke('accounting:get-trial-balance', asOfDate),
   getAccountingIncomeStatement: (input: { startDate: string; endDate: string }) =>
     ipcRenderer.invoke('accounting:get-income-statement', input),
+  getAccountingBalanceSheet: (asOfDate: string) =>
+    ipcRenderer.invoke('accounting:get-balance-sheet', asOfDate),
+  getAccountingCashMovementStatement: (input: { startDate: string; endDate: string }) =>
+    ipcRenderer.invoke('accounting:get-cash-movement-statement', input),
   postManualAccountingJournal: (input: Parameters<NouvoApi['postManualAccountingJournal']>[0]) =>
     ipcRenderer.invoke('accounting:post-manual-journal', input),
   reverseManualAccountingJournal: (

@@ -117,6 +117,14 @@ describe('double-entry accounting postings', () => {
       totalExpensesMinor: 500,
       netIncomeMinor: 500,
     });
+    const sheet = service.getBalanceSheet(today);
+    expect(sheet.currencyCode).toBe('PKR');
+    expect(sheet.balanced).toBe(true);
+    expect(sheet.assetsMinor).toBe(sheet.liabilitiesMinor + sheet.equityMinor);
+    const cashMovement = service.getCashMovementStatement(today, today);
+    expect(cashMovement.inflowMinor).toBeGreaterThan(0);
+    expect(cashMovement.netChangeMinor).toBe(cashMovement.inflowMinor - cashMovement.outflowMinor);
+    expect(cashMovement.bySource.some((row) => row.sourceType === 'sale')).toBe(true);
     expect(() => service.listTrialBalance('2026-02-31')).toThrow(/valid YYYY-MM-DD/);
     expect(() => service.getIncomeStatement(today, '2020-01-01')).toThrow(
       /start date on or before end date/,

@@ -14,6 +14,8 @@ const channels = [
   'accounting:list-journals',
   'accounting:get-trial-balance',
   'accounting:get-income-statement',
+  'accounting:get-balance-sheet',
+  'accounting:get-cash-movement-statement',
   'accounting:post-manual-journal',
   'accounting:reverse-manual-journal',
 ] as const;
@@ -35,6 +37,16 @@ export function registerAccountingIpcHandlers(): void {
     const parsed = IncomeStatementRequestSchema.safeParse(input);
     if (!parsed.success) throw new Error('Income statement date range is invalid.');
     return service().getIncomeStatement(parsed.data.startDate, parsed.data.endDate);
+  });
+  ipcMain.handle('accounting:get-balance-sheet', (_event, input: unknown) => {
+    const parsed = z.string().safeParse(input);
+    if (!parsed.success) throw new Error('Balance sheet date is invalid.');
+    return service().getBalanceSheet(parsed.data);
+  });
+  ipcMain.handle('accounting:get-cash-movement-statement', (_event, input: unknown) => {
+    const parsed = IncomeStatementRequestSchema.safeParse(input);
+    if (!parsed.success) throw new Error('Cash movement statement date range is invalid.');
+    return service().getCashMovementStatement(parsed.data.startDate, parsed.data.endDate);
   });
   ipcMain.handle('accounting:post-manual-journal', (_event, input: unknown) => {
     const database = getLocalDatabaseConnection();

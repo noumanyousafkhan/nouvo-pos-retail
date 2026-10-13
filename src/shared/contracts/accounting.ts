@@ -43,6 +43,30 @@ export const IncomeStatementRequestSchema = z
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   })
   .strict();
+export const BalanceSheetSchema = z.object({
+  asOfDate: z.string(),
+  currencyCode: z.string().length(3),
+  assetsMinor: z.number().int(),
+  liabilitiesMinor: z.number().int(),
+  equityMinor: z.number().int(),
+  balanced: z.boolean(),
+});
+export const CashMovementStatementSchema = z.object({
+  startDate: z.string(),
+  endDate: z.string(),
+  currencyCode: z.string().length(3),
+  inflowMinor: z.number().int().nonnegative(),
+  outflowMinor: z.number().int().nonnegative(),
+  netChangeMinor: z.number().int(),
+  bySource: z.array(
+    z.object({
+      sourceType: z.string(),
+      inflowMinor: z.number().int().nonnegative(),
+      outflowMinor: z.number().int().nonnegative(),
+      netChangeMinor: z.number().int(),
+    }),
+  ),
+});
 export const ManualJournalLineSchema = z
   .object({
     accountId: z.string().uuid(),
@@ -95,6 +119,11 @@ export interface AccountingApi {
     startDate: string;
     endDate: string;
   }): Promise<IncomeStatement>;
+  getAccountingBalanceSheet(asOfDate: string): Promise<z.infer<typeof BalanceSheetSchema>>;
+  getAccountingCashMovementStatement(input: {
+    startDate: string;
+    endDate: string;
+  }): Promise<z.infer<typeof CashMovementStatementSchema>>;
   postManualAccountingJournal(input: ManualJournalInput): Promise<string>;
   reverseManualAccountingJournal(input: ReverseManualJournalInput): Promise<string>;
 }
