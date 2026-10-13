@@ -47,6 +47,14 @@ export const PurchaseOrderInputSchema = z
 export const ReceivePurchaseOrderSchema = z.object({
   id: z.string().uuid(),
   supplierInvoiceNumber: z.string().trim().max(100).default(''),
+  supplierInvoiceTotalMinor: z
+    .number()
+    .int()
+    .min(0)
+    .max(9_000_000_000_000)
+    .nullable()
+    .default(null),
+  supplierInvoiceVarianceReason: z.string().trim().max(500).default(''),
   lines: z
     .array(
       z.object({
@@ -161,6 +169,12 @@ export const PurchaseOrderSummarySchema = z.object({
   supplierId: z.string().uuid(),
   supplierName: z.string(),
   supplierInvoiceNumber: z.string(),
+  supplierInvoiceTotalMinor: z.number().int().nonnegative().nullable().default(null),
+  supplierInvoiceVarianceMinor: z.number().int().nonnegative().nullable().default(null),
+  supplierInvoiceVarianceReason: z.string().default(''),
+  supplierInvoiceReconciliationStatus: z
+    .enum(['not_entered', 'matched', 'variance_explained'])
+    .default('not_entered'),
   status: z.enum(['draft', 'received', 'cancelled']),
   notes: z.string(),
   subtotalMinor: z.number().int().nonnegative(),

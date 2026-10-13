@@ -42,6 +42,10 @@ interface OrderRow {
   supplier_id: string;
   supplier_name: string;
   supplier_invoice_number: string | null;
+  supplier_invoice_total_minor?: number | null;
+  supplier_invoice_variance_minor?: number | null;
+  supplier_invoice_variance_reason?: string;
+  supplier_invoice_reconciliation_status?: 'not_entered' | 'matched' | 'variance_explained';
   status: 'draft' | 'received' | 'cancelled';
   notes: string | null;
   subtotal_minor: number;
@@ -67,6 +71,11 @@ function mapOrder(row: OrderRow): PurchaseOrderSummary {
     supplierId: row.supplier_id,
     supplierName: row.supplier_name,
     supplierInvoiceNumber: row.supplier_invoice_number ?? '',
+    supplierInvoiceTotalMinor: row.supplier_invoice_total_minor ?? null,
+    supplierInvoiceVarianceMinor: row.supplier_invoice_variance_minor ?? null,
+    supplierInvoiceVarianceReason: row.supplier_invoice_variance_reason ?? '',
+    supplierInvoiceReconciliationStatus:
+      row.supplier_invoice_reconciliation_status ?? 'not_entered',
     status: row.status,
     notes: row.notes ?? '',
     subtotalMinor: row.subtotal_minor,
@@ -154,7 +163,7 @@ export class PurchasingService {
   listPurchaseOrders(): PurchaseOrderSummary[] {
     const rows = this.database
       .prepare(
-        `SELECT po.id, po.order_number, po.supplier_id, su.name AS supplier_name, po.supplier_invoice_number, po.status, po.notes, po.subtotal_minor, COUNT(pol.id) AS line_count, po.ordered_at, po.received_at FROM purchase_orders po JOIN suppliers su ON su.id = po.supplier_id LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id WHERE po.store_id = ? AND po.counter_id = ? GROUP BY po.id ORDER BY po.ordered_at DESC LIMIT 200`,
+        `SELECT po.id, po.order_number, po.supplier_id, su.name AS supplier_name, po.supplier_invoice_number, po.supplier_invoice_total_minor, po.supplier_invoice_variance_minor, po.supplier_invoice_variance_reason, po.supplier_invoice_reconciliation_status, po.status, po.notes, po.subtotal_minor, COUNT(pol.id) AS line_count, po.ordered_at, po.received_at FROM purchase_orders po JOIN suppliers su ON su.id = po.supplier_id LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id WHERE po.store_id = ? AND po.counter_id = ? GROUP BY po.id ORDER BY po.ordered_at DESC LIMIT 200`,
       )
       .all(this.storeId, this.counterId) as unknown as OrderRow[];
     return rows.map(mapOrder);
@@ -373,6 +382,21 @@ export class PurchasingService {
         (sum, line) => sum + Math.round((line.quantity * line.unit_cost_minor) / 1000),
         0,
       );
+      let invoiceVarianceMinor: number | null = null;
+      let invoiceReconciliationStatus: 'not_entered' | 'matched' | 'variance_explained' =
+        'not_entered';
+      if (input.finalizeOrder && input.supplierInvoiceTotalMinor !== null) {
+        const cumulativeReceivedTotal = order.received_subtotal_minor + receiptTotal;
+        invoiceVarianceMinor = Math.abs(input.supplierInvoiceTotalMinor - cumulativeReceivedTotal);
+        if (invoiceVarianceMinor === 0) invoiceReconciliationStatus = 'matched';
+        else {
+          if (!input.supplierInvoiceVarianceReason.trim())
+            throw new Error(
+              'Supplier invoice total differs from the received goods value. Enter a variance reason before finalizing.',
+            );
+          invoiceReconciliationStatus = 'variance_explained';
+        }
+      }
       const discrepancies = receiptLines
         .filter((line) => input.finalizeOrder && line.quantity < line.remaining)
         .map((line) => ({
@@ -528,11 +552,21 @@ export class PurchasingService {
       this.database
         .prepare(
           `UPDATE purchase_orders SET supplier_invoice_number=?,
+        supplier_invoice_total_minor=COALESCE(?,supplier_invoice_total_minor),
+        supplier_invoice_variance_minor=COALESCE(?,supplier_invoice_variance_minor),
+        supplier_invoice_variance_reason=CASE WHEN ? <> '' THEN ? ELSE supplier_invoice_variance_reason END,
+        supplier_invoice_reconciliation_status=CASE WHEN ? <> 'not_entered' THEN ? ELSE supplier_invoice_reconciliation_status END,
         received_subtotal_minor=?, receipt_discrepancy_note=?, receipt_discrepancy_json=?,
         status=?, received_by_user_id=?, received_at=?, updated_at=? WHERE id=?`,
         )
         .run(
           invoiceNumber || null,
+          shouldFinalize ? input.supplierInvoiceTotalMinor : null,
+          shouldFinalize ? invoiceVarianceMinor : null,
+          shouldFinalize ? input.supplierInvoiceVarianceReason : '',
+          shouldFinalize ? input.supplierInvoiceVarianceReason : '',
+          shouldFinalize ? invoiceReconciliationStatus : 'not_entered',
+          shouldFinalize ? invoiceReconciliationStatus : 'not_entered',
           newReceivedSubtotal,
           shouldFinalize ? input.discrepancyReason : '',
           JSON.stringify(shouldFinalize ? discrepancies : []),
@@ -563,6 +597,14 @@ export class PurchasingService {
             cumulativeReceivedMinor: newReceivedSubtotal,
             discrepancyReason: input.discrepancyReason,
             discrepancies,
+            supplierInvoiceTotalMinor: shouldFinalize ? input.supplierInvoiceTotalMinor : null,
+            supplierInvoiceVarianceMinor: shouldFinalize ? invoiceVarianceMinor : null,
+            supplierInvoiceVarianceReason: shouldFinalize
+              ? input.supplierInvoiceVarianceReason
+              : '',
+            supplierInvoiceReconciliationStatus: shouldFinalize
+              ? invoiceReconciliationStatus
+              : 'not_entered',
           }),
         );
       this.database
@@ -587,6 +629,14 @@ export class PurchasingService {
             finalizeOrder: shouldFinalize,
             discrepancyReason: input.discrepancyReason,
             discrepancies,
+            supplierInvoiceTotalMinor: shouldFinalize ? input.supplierInvoiceTotalMinor : null,
+            supplierInvoiceVarianceMinor: shouldFinalize ? invoiceVarianceMinor : null,
+            supplierInvoiceVarianceReason: shouldFinalize
+              ? input.supplierInvoiceVarianceReason
+              : '',
+            supplierInvoiceReconciliationStatus: shouldFinalize
+              ? invoiceReconciliationStatus
+              : 'not_entered',
           }),
         );
       if (shouldFinalize && newReceivedSubtotal > 0)
@@ -596,7 +646,7 @@ export class PurchasingService {
       const row = this.database
         .prepare(
           `SELECT po.id,po.order_number,po.supplier_id,su.name AS supplier_name,
-        po.supplier_invoice_number,po.status,po.notes,po.subtotal_minor,
+        po.supplier_invoice_number,po.supplier_invoice_total_minor,po.supplier_invoice_variance_minor,po.supplier_invoice_variance_reason,po.supplier_invoice_reconciliation_status,po.status,po.notes,po.subtotal_minor,
         (SELECT COUNT(*) FROM purchase_order_lines WHERE purchase_order_id=po.id) AS line_count,
         po.ordered_at,po.received_at FROM purchase_orders po JOIN suppliers su ON su.id=po.supplier_id WHERE po.id=?`,
         )

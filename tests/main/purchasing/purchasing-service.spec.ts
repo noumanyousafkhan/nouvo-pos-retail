@@ -112,6 +112,51 @@ describe('purchasing service', () => {
     ).toEqual({ count: 1 });
   });
 
+  it('reconciles supplier invoice totals and requires an explanation for a variance', () => {
+    const { database, productId, service } = setup();
+    const supplier = service.saveSupplier({ name: 'Invoice Reconciliation Supplier' });
+    const order = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 2000, unitCostMinor: 800 }],
+    });
+    expect(() =>
+      service.receivePurchaseOrder({
+        id: order.id,
+        supplierInvoiceNumber: 'INV-MISMATCH',
+        supplierInvoiceTotalMinor: 1800,
+      }),
+    ).toThrow(/variance reason/i);
+    expect(
+      database.connection.prepare('SELECT status FROM purchase_orders WHERE id=?').get(order.id),
+    ).toEqual({ status: 'draft' });
+    const received = service.receivePurchaseOrder({
+      id: order.id,
+      supplierInvoiceNumber: 'INV-MISMATCH',
+      supplierInvoiceTotalMinor: 1800,
+      supplierInvoiceVarianceReason: 'Supplier added freight charge',
+    });
+    expect(received).toMatchObject({
+      status: 'received',
+      supplierInvoiceTotalMinor: 1800,
+      supplierInvoiceVarianceMinor: 200,
+      supplierInvoiceVarianceReason: 'Supplier added freight charge',
+      supplierInvoiceReconciliationStatus: 'variance_explained',
+    });
+    const matchedOrder = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 1000, unitCostMinor: 800 }],
+    });
+    const matched = service.receivePurchaseOrder({
+      id: matchedOrder.id,
+      supplierInvoiceNumber: 'INV-MATCH',
+      supplierInvoiceTotalMinor: 800,
+    });
+    expect(matched).toMatchObject({
+      supplierInvoiceVarianceMinor: 0,
+      supplierInvoiceReconciliationStatus: 'matched',
+    });
+  });
+
   it('supports multiple partial receipts and finalizes a short delivery using actual received value', () => {
     const { database, storeId, counterId, productId, service } = setup();
     const supplier = service.saveSupplier({ name: 'Partial Delivery Supplier' });

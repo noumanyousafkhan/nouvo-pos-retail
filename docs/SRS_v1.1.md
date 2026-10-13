@@ -131,7 +131,7 @@ A dedicated **Settings → Business Branding** screen allows an owner/admin to c
 ## 10. Stock and purchasing
 
 - Maintain a stock movement ledger as the source of stock history; every receipt, sale, return, adjustment, write-off and transfer-like operation must be traceable.
-- Supplier records, purchase orders, goods receiving, supplier invoice/cost details and purchase returns are supported within release scope.
+- Supplier records, purchase orders, goods receiving, supplier invoice totals, invoice-to-received-value reconciliation with documented variance explanations, supplier balances/payments and purchase returns are supported within release scope. Tax, freight and credit-note allocation policies require accountant approval.
 - Partial receiving and discrepancy handling must be explicit.
 - Stock adjustments/counts require permissions, reason codes, audit history and balanced inventory effects.
 - Support reorder thresholds and low-stock reporting.

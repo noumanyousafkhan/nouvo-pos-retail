@@ -211,16 +211,38 @@ async function receiveOrder(order: PurchaseOrderSummary) {
       if (!discrepancyReason)
         throw new Error('A discrepancy reason is required to finalize a short delivery.');
     }
+    let supplierInvoiceTotalMinor: number | null = null;
+    let supplierInvoiceVarianceReason = '';
+    if (finalizeOrder) {
+      const invoiceTotal = window.prompt(
+        'Enter the supplier invoice total including any charges/tax (leave blank if not available):',
+      );
+      if (invoiceTotal === null) return;
+      if (invoiceTotal.trim()) {
+        const amount = Number(invoiceTotal);
+        if (!Number.isFinite(amount) || amount < 0 || Math.round(amount * 100) !== amount * 100)
+          throw new Error('Enter a valid supplier invoice amount with up to 2 decimal places.');
+        supplierInvoiceTotalMinor = Math.round(amount * 100);
+        const reason = window.prompt(
+          'If the supplier invoice total differs from the received goods value, enter the variance reason. Leave blank if totals match:',
+          '',
+        );
+        if (reason === null) return;
+        supplierInvoiceVarianceReason = reason.trim();
+      }
+    }
     const received = await window.nouvo.receivePurchaseOrder({
       id: order.id,
       supplierInvoiceNumber,
+      supplierInvoiceTotalMinor,
+      supplierInvoiceVarianceReason,
       lines,
       finalizeOrder,
       discrepancyReason,
     });
     await refresh();
     successMessage.value = finalizeOrder
-      ? `${received.orderNumber} finalized. Received stock, actual received value, and any supplier discrepancy were recorded.`
+      ? `${received.orderNumber} finalized. Received stock, supplier invoice reconciliation, actual received value, and any supplier discrepancy were recorded.`
       : `${received.orderNumber} partial receipt saved. Stock updated; you can receive the remaining quantity later.`;
   } catch (error) {
     errorMessage.value =
@@ -528,6 +550,20 @@ onMounted(async () => {
                 ><small v-if="order.supplierInvoiceNumber" class="purchasing-invoice"
                   >Invoice: {{ order.supplierInvoiceNumber }}</small
                 >
+                <small
+                  v-if="order.supplierInvoiceReconciliationStatus !== 'not_entered'"
+                  class="purchasing-invoice"
+                >
+                  Invoice reconciliation:
+                  {{
+                    order.supplierInvoiceReconciliationStatus === 'matched'
+                      ? 'Matched'
+                      : 'Variance explained'
+                  }}
+                  <template v-if="order.supplierInvoiceVarianceMinor !== null">
+                    · variance {{ money(order.supplierInvoiceVarianceMinor) }}</template
+                  >
+                </small>
               </td>
               <td>{{ order.supplierName }}</td>
               <td>{{ order.lineCount }}</td>

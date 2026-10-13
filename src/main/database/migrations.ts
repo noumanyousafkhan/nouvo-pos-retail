@@ -694,6 +694,16 @@ export const migrations: Migration[] = [
       CREATE INDEX purchase_receipt_lines_batch_idx ON purchase_receipt_lines(purchase_receipt_id);
     `,
   },
+  {
+    version: 14,
+    name: 'supplier_invoice_reconciliation',
+    sql: `
+      ALTER TABLE purchase_orders ADD COLUMN supplier_invoice_total_minor INTEGER CHECK (supplier_invoice_total_minor IS NULL OR supplier_invoice_total_minor >= 0);
+      ALTER TABLE purchase_orders ADD COLUMN supplier_invoice_variance_minor INTEGER CHECK (supplier_invoice_variance_minor IS NULL OR supplier_invoice_variance_minor >= 0);
+      ALTER TABLE purchase_orders ADD COLUMN supplier_invoice_variance_reason TEXT NOT NULL DEFAULT '';
+      ALTER TABLE purchase_orders ADD COLUMN supplier_invoice_reconciliation_status TEXT NOT NULL DEFAULT 'not_entered' CHECK (supplier_invoice_reconciliation_status IN ('not_entered','matched','variance_explained'));
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;
