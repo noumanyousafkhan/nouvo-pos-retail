@@ -13,7 +13,6 @@ async function main() {
     application = await electron.launch({
       executablePath,
       args: [
-        '--no-sandbox',
         '--disable-gpu',
         '--ozone-platform=x11',
         '--disable-features=WaylandWindowDecorations',
@@ -84,9 +83,9 @@ async function main() {
     await page.getByRole('link', { name: 'Synchronization' }).click({ force: true });
     await page.getByRole('heading', { name: 'Synchronization' }).waitFor();
     await page.getByRole('heading', { name: 'Central server connection' }).waitFor();
-    console.log('PASS packaged first-run owner setup');
-    console.log('PASS packaged dashboard and secure preload bridge');
-    console.log('PASS packaged accounting trial balance and income statement UI');
+    console.log('PASS packaged sandboxed launch, first-run owner setup and secure preload bridge');
+    console.log('PASS packaged dashboard and accounting trial balance/income statement UI');
+    console.log('PASS packaged manual journal posting and reversal dialog');
     console.log('PASS packaged sync configuration and diagnostics UI');
   } finally {
     if (application) await application.close();

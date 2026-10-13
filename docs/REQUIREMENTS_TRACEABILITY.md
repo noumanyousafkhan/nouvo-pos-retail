@@ -36,7 +36,7 @@ This document separates implemented code from acceptance-tested behavior. A data
 - `npm run lint`, `npm run format:check`, and `git diff --check` passed after the latest UI and sync changes.
 - Linux AppImage (`release/NOUVO POS Cash and Carry-0.1.0.AppImage`, 126 MB) and Debian package (`release/nouvo-pos-cash-carry_0.1.0_amd64.deb`, 99 MB) rebuilt successfully for schema v10. `npm run test:e2e:linux` passed against the packaged app under Xvfb: first-run owner setup, dashboard, accounting trial balance/income statement, manual journal posting and reversal with a reason, and synchronization settings. Cashier shifts, purchasing, checkout peripherals and return/void flows still need dedicated packaged interaction coverage.
 - Windows NSIS installer rebuilt successfully: `release/NOUVO POS Cash and Carry Setup 0.1.0.exe` (110 MB) plus blockmap. The installer artifact was produced on Linux; actual install, launch, upgrade-over-existing-install and data-preservation behavior still require a Windows machine.
-- The current schema-v10 packaged Electron smoke test passes in Xvfb with the X11 Ozone backend. This is a Linux virtual-display smoke test, not a substitute for real-machine install/update tests.
+- The current schema-v10 packaged Electron smoke test passes in Xvfb with the X11 Ozone backend and without disabling Chromium's sandbox. This verifies sandboxed startup in a virtual display, not a substitute for real-machine install/update tests.
 - Node emits an experimental warning for `node:sqlite`. A stable driver and actual packaged Electron compatibility across target operating systems are not yet verified.
 
 ## Not yet complete — do not treat this build as production-ready
@@ -46,7 +46,7 @@ This document separates implemented code from acceptance-tested behavior. A data
 - Central sync baseline now exists in `sync-server/`: PostgreSQL event ingestion, authenticated counter provisioning, product/stock/sale/return processing, counter stock allocations, snapshot pull, local allocation enforcement and conflict list/resolution API. Local PostgreSQL integration smoke checks pass. Still open: comprehensive business-event coverage, multi-counter concurrency/restore acceptance tests, provisioning/recovery UX and production TLS deployment. A basic central operations UI is available at `/admin` for stock adjustment, counter allocation and conflict review/resolution. Secure in-app endpoint/token configuration is implemented with OS secure storage; store settings snapshots are included in the central API.
 - Full branding acceptance: logo asset management, historical receipt branding verification and direct thermal-printer hardware testing.
 - Report gaps: no cashier/category/gross-margin, balance-sheet or cash-flow reports yet; stock value is an estimate using current purchase cost, not a posted accounting valuation. Purchases are not fully integrated into financial statements.
-- End-to-end acceptance on real store data, Windows installer/update tests, Linux packaged install test, normal sandboxed launch verification and peripheral/hardware testing.
+- End-to-end acceptance on real store data, actual Windows installer/upgrade tests, Linux install/uninstall/data-preservation tests and physical peripheral/hardware testing.
 - Performance/accessibility acceptance against SRS target hardware and datasets.
 
 ## Release rule
