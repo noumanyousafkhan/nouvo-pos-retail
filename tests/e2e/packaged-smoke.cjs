@@ -44,6 +44,72 @@ async function main() {
       .fill('Smoke-Test-Password-2026!');
     await page.getByRole('button', { name: /Create owner and open POS/ }).click({ force: true });
     await page.getByRole('heading', { name: 'Good to see you.' }).waitFor();
+    const checkoutFlow = await page.evaluate(async () => {
+      const product = await window.nouvo.saveProduct({
+        name: 'E2E Checkout Item',
+        categoryName: 'Smoke Test',
+        purchaseCostMinor: 100,
+        sellingPriceMinor: 200,
+      });
+      await window.nouvo.recordStockMovement({
+        productId: product.id,
+        movementType: 'receipt',
+        quantityMilli: 2000,
+        unitCostMinor: 100,
+        reason: 'Packaged checkout smoke test',
+      });
+      const opened = await window.nouvo.openCashierSession({
+        openingFloatMinor: 1000,
+        openingNote: 'Packaged checkout smoke test',
+      });
+      if (opened.status !== 'open' || opened.expectedCashMinor !== 1000) {
+        throw new Error('Cashier session did not open with the expected opening float.');
+      }
+      const sale = await window.nouvo.completeSale({
+        idempotencyKey: crypto.randomUUID(),
+        items: [{ productId: product.id, quantityMilli: 1000 }],
+        paymentLines: [
+          { paymentMethod: 'cash', amountMinor: 200, amountTenderedMinor: 500, reference: '' },
+        ],
+      });
+      if (sale.totalMinor !== 200 || sale.changeDueMinor !== 300) {
+        throw new Error('Cash checkout total or change calculation was incorrect.');
+      }
+      const returnable = await window.nouvo.getReturnableItems(sale.id);
+      if (returnable[0]?.remainingQuantityMilli !== 1000) {
+        throw new Error('Completed sale was not available for a customer return.');
+      }
+      const refund = await window.nouvo.returnSale({
+        saleId: sale.id,
+        reason: 'Packaged customer return smoke test',
+        items: [{ saleLineId: returnable[0].saleLineId, quantityMilli: 1000 }],
+        refundPaymentMethod: 'cash',
+        refundReference: '',
+      });
+      const active = await window.nouvo.getActiveCashierSession();
+      if (refund.totalMinor !== 200 || active?.expectedCashMinor !== 1000) {
+        throw new Error('Cash refund did not reconcile to the open cashier session.');
+      }
+      const closed = await window.nouvo.closeCashierSession({
+        countedCashMinor: 1000,
+        closingNote: 'Packaged checkout smoke test',
+      });
+      if (
+        closed.varianceMinor !== 0 ||
+        closed.cashSalesMinor !== 200 ||
+        closed.cashRefundsMinor !== 200
+      ) {
+        throw new Error('Cashier shift expected cash, refund or variance was incorrect.');
+      }
+      return {
+        saleId: sale.id,
+        receiptNumber: sale.receiptNumber,
+        returnNumber: refund.returnNumber,
+      };
+    });
+    console.log(
+      `PASS packaged checkout ${checkoutFlow.receiptNumber}, cash change, customer return/refund and zero-variance cashier close`,
+    );
     const purchase = await page.evaluate(async () => {
       const supplier = await window.nouvo.saveSupplier({ name: 'E2E Supplier' });
       const product = await window.nouvo.saveProduct({

@@ -24,12 +24,13 @@
 
 ## Posting matrix
 
-| Source event        | Debit                                                                                     | Credit                                                              | Notes                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Completed sale      | Cash on Hand for cash; Non-cash Payment Clearing for other payment methods                | Sales Revenue for net-of-tax sale amount; Sales Tax Payable for tax | Cash applied to the sale is used, not amount tendered; change due is excluded from drawer increase. |
-| Sale return or void | Sales Returns and Allowances for refund excluding tax; Sales Tax Payable for tax refunded | Cash on Hand for cash refund; Non-cash Payment Clearing otherwise   | Inventory is debited and COGS credited for returned quantities at the original recorded unit cost.  |
-| Goods received      | Inventory                                                                                 | Accounts Payable                                                    | Supplier invoice is recorded as a liability; supplier payment settlement is not yet implemented.    |
-| Supplier return     | Accounts Payable                                                                          | Inventory                                                           | Return is limited to received quantity still on hand; zero-value returns have no monetary journal.  |
+| Source event        | Debit                                                                                     | Credit                                                              | Notes                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Completed sale      | Cash on Hand for cash; Non-cash Payment Clearing for other payment methods                | Sales Revenue for net-of-tax sale amount; Sales Tax Payable for tax | Cash applied to the sale is used, not amount tendered; change due is excluded from drawer increase.                      |
+| Sale return or void | Sales Returns and Allowances for refund excluding tax; Sales Tax Payable for tax refunded | Cash on Hand for cash refund; Non-cash Payment Clearing otherwise   | Inventory is debited and COGS credited for returned quantities at the original recorded unit cost.                       |
+| Goods received      | Inventory                                                                                 | Accounts Payable                                                    | Received supplier invoice is recorded as a liability; invoice-level supplier payments debit AP and credit cash/clearing. |
+| Supplier return     | Accounts Payable                                                                          | Inventory                                                           | Return is limited to received quantity still on hand; zero-value returns have no monetary journal.                       |
+| Supplier payment    | Accounts Payable                                                                          | Cash (cash) / Non-cash Clearing (other methods)                     | Payment is linked to a received invoice and cannot exceed its remaining balance.                                         |
 
 ## Ledger invariants
 
