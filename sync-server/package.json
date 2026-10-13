@@ -1,0 +1,25 @@
+{
+  "name": "nouvo-pos-sync-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Central PostgreSQL ingestion service for NOUVO POS counter outbox events",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "provision-counter": "tsx src/provision-counter.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.3",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.4"
+  }
+}
