@@ -7,12 +7,19 @@ import type { Product } from '@shared/contracts/products';
 import type {
   PurchaseOrderInput,
   PurchaseOrderSummary,
+  PurchaseReturnableLine,
+  PurchaseReturnSummary,
   Supplier,
 } from '@shared/contracts/purchasing';
 
 const suppliers = ref<Supplier[]>([]);
 const products = ref<Product[]>([]);
 const orders = ref<PurchaseOrderSummary[]>([]);
+const purchaseReturns = ref<PurchaseReturnSummary[]>([]);
+const returnOrder = ref<PurchaseOrderSummary | null>(null);
+const returnLines = ref<Array<PurchaseReturnableLine & { quantity: string }>>([]);
+const returnReason = ref('');
+const canReturnPurchases = ref(false);
 const currencyCode = ref('PKR');
 const loading = ref(false);
 const busy = ref(false);
@@ -43,15 +50,17 @@ async function refresh() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [supplierRows, productRows, orderRows, settings] = await Promise.all([
+    const [supplierRows, productRows, orderRows, returnRows, settings] = await Promise.all([
       window.nouvo.listSuppliers(),
       window.nouvo.listProducts({ includeArchived: false }),
       window.nouvo.listPurchaseOrders(),
+      window.nouvo.listPurchaseReturns(),
       window.nouvo.getBusinessSettings(),
     ]);
     suppliers.value = supplierRows;
     products.value = productRows.filter((product) => product.isActive);
     orders.value = orderRows;
+    purchaseReturns.value = returnRows;
     currencyCode.value = settings.currencyCode;
     if (!orderForm.supplierId && suppliers.value.length)
       orderForm.supplierId = suppliers.value[0].id;
@@ -156,12 +165,71 @@ async function cancelOrder(order: PurchaseOrderSummary) {
     busy.value = false;
   }
 }
+async function openReturn(order: PurchaseOrderSummary): Promise<void> {
+  busy.value = true;
+  errorMessage.value = '';
+  try {
+    const lines = await window.nouvo.listReturnablePurchaseOrderLines(order.id);
+    if (!lines.some((line) => line.returnableQuantityMilli > 0)) {
+      errorMessage.value = 'No stock from this purchase order is currently eligible to return.';
+      return;
+    }
+    returnOrder.value = order;
+    returnReason.value = '';
+    returnLines.value = lines.map((line) => ({ ...line, quantity: '' }));
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Returnable quantities could not be loaded.';
+  } finally {
+    busy.value = false;
+  }
+}
+async function submitPurchaseReturn(): Promise<void> {
+  if (!returnOrder.value || busy.value) return;
+  const lines = returnLines.value
+    .filter((line) => Number(line.quantity) > 0)
+    .map((line) => ({
+      purchaseOrderLineId: line.purchaseOrderLineId,
+      quantityMilli: Math.round(Number(line.quantity) * 1000),
+    }));
+  if (returnReason.value.trim().length < 3 || !lines.length) {
+    errorMessage.value = 'Enter a reason and at least one quantity to return.';
+    return;
+  }
+  busy.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+  try {
+    const result = await window.nouvo.createPurchaseReturn({
+      purchaseOrderId: returnOrder.value.id,
+      reason: returnReason.value.trim(),
+      lines,
+    });
+    returnOrder.value = null;
+    returnLines.value = [];
+    await refresh();
+    successMessage.value = `Supplier return ${result.returnNumber} posted for ${money(result.totalMinor)}.`;
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Supplier return could not be posted.';
+  } finally {
+    busy.value = false;
+  }
+}
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
   );
 }
-onMounted(refresh);
+onMounted(async () => {
+  await refresh();
+  try {
+    const authState = await window.nouvo.getAuthState();
+    canReturnPurchases.value = authState.permissions.includes('purchasing.return');
+  } catch {
+    canReturnPurchases.value = false;
+  }
+});
 </script>
 
 <template>
@@ -370,7 +438,14 @@ onMounted(refresh);
                     :disabled="busy"
                     @click="cancelOrder(order)"
                   >
-                    Cancel
+                    Cancel</button
+                  ><button
+                    v-if="order.status === 'received' && canReturnPurchases"
+                    type="button"
+                    :disabled="busy"
+                    @click="openReturn(order)"
+                  >
+                    Return goods
                   </button>
                 </div>
               </td>
@@ -379,10 +454,120 @@ onMounted(refresh);
         </table>
       </div>
     </BaseCard>
+    <BaseCard v-if="purchaseReturns.length" class="purchasing-orders-card">
+      <header class="purchasing-card-heading">
+        <div>
+          <h2>Supplier return history</h2>
+          <p>Posted returns reduce stock and create audit, sync and accounting records.</p>
+        </div>
+        <span>{{ purchaseReturns.length }} returns</span>
+      </header>
+      <div class="reports-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>Return</th>
+              <th>Purchase order</th>
+              <th>Supplier</th>
+              <th>Reason</th>
+              <th>Value</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="purchaseReturn in purchaseReturns" :key="purchaseReturn.id">
+              <td>
+                <strong>{{ purchaseReturn.returnNumber }}</strong>
+              </td>
+              <td>{{ purchaseReturn.orderNumber }}</td>
+              <td>{{ purchaseReturn.supplierName }}</td>
+              <td>{{ purchaseReturn.reason }}</td>
+              <td>{{ money(purchaseReturn.totalMinor) }}</td>
+              <td>{{ formatDate(purchaseReturn.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </BaseCard>
+    <div v-if="returnOrder" class="purchasing-modal-backdrop" role="presentation">
+      <section
+        class="purchasing-return-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="purchase-return-title"
+      >
+        <header class="purchasing-card-heading">
+          <div>
+            <h2 id="purchase-return-title">Return goods · {{ returnOrder.orderNumber }}</h2>
+            <p>
+              {{ returnOrder.supplierName }} · only received quantity still in stock can be
+              returned.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close return dialog"
+            :disabled="busy"
+            @click="returnOrder = null"
+          >
+            ×
+          </button>
+        </header>
+        <label class="inventory-field"
+          >Reason for return <span>*</span
+          ><textarea
+            v-model.trim="returnReason"
+            maxlength="500"
+            rows="2"
+            placeholder="Damaged goods, expiry, supplier correction…"
+          />
+        </label>
+        <div class="reports-table-wrap">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Received</th>
+                <th>Returned</th>
+                <th>Available to return</th>
+                <th>Return qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="line in returnLines" :key="line.purchaseOrderLineId">
+                <td>
+                  {{ line.productName }}<small v-if="line.sku">{{ line.sku }}</small>
+                </td>
+                <td>{{ (line.quantityReceivedMilli / 1000).toFixed(3) }}</td>
+                <td>{{ (line.quantityReturnedMilli / 1000).toFixed(3) }}</td>
+                <td>{{ (line.returnableQuantityMilli / 1000).toFixed(3) }}</td>
+                <td>
+                  <input
+                    v-model="line.quantity"
+                    type="number"
+                    min="0"
+                    :max="line.returnableQuantityMilli / 1000"
+                    step="0.001"
+                    :disabled="line.returnableQuantityMilli === 0 || busy"
+                    :aria-label="'Return quantity for ' + line.productName"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="purchasing-return-actions">
+          <button type="button" :disabled="busy" @click="returnOrder = null">Cancel</button
+          ><BaseButton type="button" :loading="busy" @click="submitPurchaseReturn"
+            >Post supplier return</BaseButton
+          >
+        </div>
+      </section>
+    </div>
     <p class="reports-disclaimer">
-      Receiving uses moving weighted-average purchase cost for the local counter and records
-      supplier invoice metadata. Supplier balances, purchase returns, posted accounting journals and
-      central sync are not yet implemented.
+      Receiving uses moving weighted-average purchase cost. Supplier returns now reduce local stock
+      atomically, retain audit/outbox history and post a balanced accounts-payable/inventory journal
+      when the return has value. Supplier payments and aging are still outstanding.
     </p>
   </div>
 </template>

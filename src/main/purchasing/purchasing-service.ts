@@ -3,10 +3,16 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   PurchaseOrderInputSchema,
   PurchaseOrderSummarySchema,
+  PurchaseReturnInputSchema,
+  PurchaseReturnSummarySchema,
+  PurchaseReturnableLineSchema,
   ReceivePurchaseOrderSchema,
   SupplierInputSchema,
   SupplierSchema,
   type PurchaseOrderSummary,
+  type PurchaseReturnInput,
+  type PurchaseReturnSummary,
+  type PurchaseReturnableLine,
   type Supplier,
 } from '../../shared/contracts/purchasing';
 import { runInTransaction } from '../database/connection';
@@ -434,6 +440,249 @@ export class PurchasingService {
         )
         .get(order.id) as unknown as OrderRow;
       return mapOrder(row);
+    });
+  }
+
+  listReturnablePurchaseOrderLines(rawOrderId: unknown): PurchaseReturnableLine[] {
+    if (typeof rawOrderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(rawOrderId))
+      throw new Error('Purchase order ID is invalid.');
+    const order = this.database
+      .prepare(
+        "SELECT id FROM purchase_orders WHERE id=? AND store_id=? AND counter_id=? AND status='received'",
+      )
+      .get(rawOrderId, this.storeId, this.counterId);
+    if (!order)
+      throw new Error('Only a received purchase order from this counter can be returned.');
+    const rows = this.database
+      .prepare(
+        `SELECT pol.id AS purchaseOrderLineId, pol.product_id AS productId,
+          pol.product_name_snapshot AS productName, COALESCE(pol.sku_snapshot,'') AS sku,
+          pol.quantity_received_milli AS quantityReceivedMilli,
+          COALESCE((SELECT SUM(prl.quantity_milli) FROM purchase_return_lines prl WHERE prl.purchase_order_line_id=pol.id),0) AS quantityReturnedMilli,
+          pol.unit_cost_minor AS unitCostMinor,
+          COALESCE((SELECT SUM(sm.quantity_delta_milli) FROM stock_movements sm WHERE sm.product_id=pol.product_id AND sm.counter_id=po.counter_id),0) AS onHandMilli
+        FROM purchase_order_lines pol
+        JOIN purchase_orders po ON po.id=pol.purchase_order_id
+        WHERE po.id=? AND po.store_id=? AND po.counter_id=?
+        ORDER BY pol.rowid`,
+      )
+      .all(rawOrderId, this.storeId, this.counterId) as {
+      purchaseOrderLineId: string;
+      productId: string;
+      productName: string;
+      sku: string;
+      quantityReceivedMilli: number;
+      quantityReturnedMilli: number;
+      unitCostMinor: number;
+      onHandMilli: number;
+    }[];
+    return rows.map((row) =>
+      PurchaseReturnableLineSchema.parse({
+        purchaseOrderLineId: row.purchaseOrderLineId,
+        productId: row.productId,
+        productName: row.productName,
+        sku: row.sku,
+        quantityReceivedMilli: row.quantityReceivedMilli,
+        quantityReturnedMilli: row.quantityReturnedMilli,
+        returnableQuantityMilli: Math.max(
+          0,
+          Math.min(row.quantityReceivedMilli - row.quantityReturnedMilli, row.onHandMilli),
+        ),
+        unitCostMinor: row.unitCostMinor,
+      }),
+    );
+  }
+
+  listPurchaseReturns(): PurchaseReturnSummary[] {
+    const rows = this.database
+      .prepare(
+        `SELECT pr.id, pr.return_number AS returnNumber, pr.purchase_order_id AS purchaseOrderId,
+          po.order_number AS orderNumber, pr.supplier_id AS supplierId, su.name AS supplierName,
+          pr.reason, pr.total_minor AS totalMinor, COUNT(prl.id) AS lineCount, pr.created_at AS createdAt
+        FROM purchase_returns pr
+        JOIN purchase_orders po ON po.id=pr.purchase_order_id
+        JOIN suppliers su ON su.id=pr.supplier_id
+        LEFT JOIN purchase_return_lines prl ON prl.purchase_return_id=pr.id
+        WHERE pr.store_id=? AND pr.counter_id=?
+        GROUP BY pr.id ORDER BY pr.created_at DESC LIMIT 200`,
+      )
+      .all(this.storeId, this.counterId);
+    return rows.map((row) => PurchaseReturnSummarySchema.parse(row));
+  }
+
+  createPurchaseReturn(rawInput: unknown): PurchaseReturnSummary {
+    const input = PurchaseReturnInputSchema.parse(rawInput) as PurchaseReturnInput;
+    return runInTransaction(this.database, () => {
+      const order = this.database
+        .prepare(
+          'SELECT id, order_number, supplier_id, status FROM purchase_orders WHERE id=? AND store_id=? AND counter_id=?',
+        )
+        .get(input.purchaseOrderId, this.storeId, this.counterId) as
+        { id: string; order_number: string; supplier_id: string; status: string } | undefined;
+      if (!order || order.status !== 'received')
+        throw new Error('Only a received purchase order from this counter can be returned.');
+
+      const lines = input.lines.map((requested) => {
+        const line = this.database
+          .prepare(
+            `SELECT pol.id, pol.product_id, pol.product_name_snapshot, pol.quantity_received_milli,
+              pol.unit_cost_minor,
+              COALESCE((SELECT SUM(prl.quantity_milli) FROM purchase_return_lines prl WHERE prl.purchase_order_line_id=pol.id),0) AS quantity_returned_milli,
+              COALESCE((SELECT SUM(sm.quantity_delta_milli) FROM stock_movements sm WHERE sm.product_id=pol.product_id AND sm.counter_id=po.counter_id),0) AS on_hand_milli
+            FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id
+            WHERE pol.id=? AND po.id=? AND po.store_id=? AND po.counter_id=?`,
+          )
+          .get(requested.purchaseOrderLineId, order.id, this.storeId, this.counterId) as
+          | {
+              id: string;
+              product_id: string;
+              product_name_snapshot: string;
+              quantity_received_milli: number;
+              unit_cost_minor: number;
+              quantity_returned_milli: number;
+              on_hand_milli: number;
+            }
+          | undefined;
+        if (!line) throw new Error('A return line does not belong to this purchase order.');
+        const returnable = Math.max(
+          0,
+          Math.min(line.quantity_received_milli - line.quantity_returned_milli, line.on_hand_milli),
+        );
+        if (requested.quantityMilli > returnable)
+          throw new Error(
+            `Cannot return more ${line.product_name_snapshot} than the remaining received quantity and current stock allow.`,
+          );
+        return {
+          orderLineId: line.id,
+          productId: line.product_id,
+          productName: line.product_name_snapshot,
+          quantityMilli: requested.quantityMilli,
+          unitCostMinor: line.unit_cost_minor,
+          lineTotalMinor: Math.round((requested.quantityMilli * line.unit_cost_minor) / 1000),
+        };
+      });
+      const totalMinor = lines.reduce((sum, line) => sum + line.lineTotalMinor, 0);
+      const datePart = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      const prefix = `PR-${datePart}-`;
+      const sequence = this.database
+        .prepare(
+          'SELECT COUNT(*) AS count FROM purchase_returns WHERE store_id=? AND return_number LIKE ?',
+        )
+        .get(this.storeId, `${prefix}%`) as { count: number };
+      const returnNumber = prefix + String(sequence.count + 1).padStart(4, '0');
+      const returnId = randomUUID();
+      this.database
+        .prepare(
+          'INSERT INTO purchase_returns (id,store_id,counter_id,purchase_order_id,supplier_id,return_number,reason,total_minor,created_by_user_id) VALUES (?,?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          returnId,
+          this.storeId,
+          this.counterId,
+          order.id,
+          order.supplier_id,
+          returnNumber,
+          input.reason,
+          totalMinor,
+          this.actorUserId,
+        );
+      for (const line of lines) {
+        this.database
+          .prepare(
+            'INSERT INTO purchase_return_lines (id,purchase_return_id,purchase_order_line_id,product_id,quantity_milli,unit_cost_minor,line_total_minor) VALUES (?,?,?,?,?,?,?)',
+          )
+          .run(
+            randomUUID(),
+            returnId,
+            line.orderLineId,
+            line.productId,
+            line.quantityMilli,
+            line.unitCostMinor,
+            line.lineTotalMinor,
+          );
+        const movementId = randomUUID();
+        this.database
+          .prepare(
+            "INSERT INTO stock_movements (id,store_id,counter_id,product_id,movement_type,quantity_delta_milli,unit_cost_minor,reference_type,reference_id,reason,actor_user_id) VALUES (?,?,?,?,'adjustment',?,?, 'purchase_return',?,?,?)",
+          )
+          .run(
+            movementId,
+            this.storeId,
+            this.counterId,
+            line.productId,
+            -line.quantityMilli,
+            line.unitCostMinor,
+            returnId,
+            `Supplier return ${returnNumber}: ${input.reason}`,
+            this.actorUserId,
+          );
+        this.database
+          .prepare(
+            "INSERT INTO outbox_events (id,event_type,aggregate_type,aggregate_id,payload_json) VALUES (?,'stock.movement.recorded','stock_movement',?,?)",
+          )
+          .run(
+            randomUUID(),
+            movementId,
+            JSON.stringify({
+              schemaVersion: 1,
+              movementId,
+              storeId: this.storeId,
+              counterId: this.counterId,
+              productId: line.productId,
+              movementType: 'adjustment',
+              quantityDeltaMilli: -line.quantityMilli,
+              unitCostMinor: line.unitCostMinor,
+              referenceType: 'purchase_return',
+              referenceId: returnId,
+              reason: `Supplier return ${returnNumber}: ${input.reason}`,
+            }),
+          );
+      }
+      this.database
+        .prepare(
+          "INSERT INTO audit_events (id,store_id,actor_user_id,action,entity_type,entity_id,after_json) VALUES (?,?,?,'purchase.return.created','purchase_return',?,?)",
+        )
+        .run(
+          randomUUID(),
+          this.storeId,
+          this.actorUserId,
+          returnId,
+          JSON.stringify({ returnNumber, orderId: order.id, totalMinor, lines }),
+        );
+      if (totalMinor > 0)
+        new AccountingService(this.database, this.storeId, this.actorUserId).postPurchaseReturn(
+          returnId,
+        );
+      this.database
+        .prepare(
+          "INSERT INTO outbox_events (id,event_type,aggregate_type,aggregate_id,payload_json) VALUES (?,'purchase.return.created','purchase_return',?,?)",
+        )
+        .run(
+          randomUUID(),
+          returnId,
+          JSON.stringify({
+            schemaVersion: 1,
+            returnId,
+            returnNumber,
+            purchaseOrderId: order.id,
+            supplierId: order.supplier_id,
+            reason: input.reason,
+            totalMinor,
+            lines,
+          }),
+        );
+      const summary = this.database
+        .prepare(
+          `SELECT pr.id, pr.return_number AS returnNumber, pr.purchase_order_id AS purchaseOrderId,
+            po.order_number AS orderNumber, pr.supplier_id AS supplierId, su.name AS supplierName,
+            pr.reason, pr.total_minor AS totalMinor,
+            (SELECT COUNT(*) FROM purchase_return_lines WHERE purchase_return_id=pr.id) AS lineCount,
+            pr.created_at AS createdAt
+          FROM purchase_returns pr JOIN purchase_orders po ON po.id=pr.purchase_order_id
+          JOIN suppliers su ON su.id=pr.supplier_id WHERE pr.id=?`,
+        )
+        .get(returnId);
+      return PurchaseReturnSummarySchema.parse(summary);
     });
   }
 

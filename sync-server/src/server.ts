@@ -256,6 +256,26 @@ async function applyEvent(
       if (canonicalJson(previousMovement.rows[0].payload) === canonicalJson(payload)) return;
       throw new DomainConflict('Stock movement ID was reused with different contents.');
     }
+    const isSupplierReturn = payload.referenceType === 'purchase_return' && delta.data < 0;
+    const returnQuantity = isSupplierReturn ? -delta.data : 0;
+    if (isSupplierReturn) {
+      const allocation = await client.query<{
+        allocated_quantity_milli: string;
+        remaining_quantity_milli: string;
+      }>(
+        'SELECT allocated_quantity_milli::text,remaining_quantity_milli::text FROM sync_allocations WHERE store_id=$1 AND counter_id=$2 AND product_id=$3 FOR UPDATE',
+        [storeId, counterId, productId.data],
+      );
+      const row = allocation.rows[0];
+      if (
+        !row ||
+        BigInt(row.allocated_quantity_milli) < BigInt(returnQuantity) ||
+        BigInt(row.remaining_quantity_milli) < BigInt(returnQuantity)
+      )
+        throw new DomainConflict(
+          'Supplier return exceeds this counter’s remaining allocated stock.',
+        );
+    }
     const updated = await client.query(
       'UPDATE sync_inventory SET on_hand_quantity_milli=on_hand_quantity_milli+$3, updated_at=now() WHERE store_id=$1 AND product_id=$2 AND on_hand_quantity_milli+$3>=0 RETURNING on_hand_quantity_milli',
       [storeId, productId.data, delta.data],
@@ -264,6 +284,12 @@ async function applyEvent(
       throw new DomainConflict(
         'Stock movement references an unknown product or would make central stock negative.',
       );
+    if (isSupplierReturn) {
+      await client.query(
+        'UPDATE sync_allocations SET allocated_quantity_milli=allocated_quantity_milli-$4, remaining_quantity_milli=remaining_quantity_milli-$4, updated_at=now() WHERE store_id=$1 AND counter_id=$2 AND product_id=$3',
+        [storeId, counterId, productId.data, returnQuantity],
+      );
+    }
     const allocated = await client.query<{ reserved: string }>(
       'SELECT COALESCE(SUM(remaining_quantity_milli),0)::text AS reserved FROM sync_allocations WHERE store_id=$1 AND product_id=$2',
       [storeId, productId.data],

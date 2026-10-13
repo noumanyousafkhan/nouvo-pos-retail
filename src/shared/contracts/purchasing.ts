@@ -48,6 +48,48 @@ export const ReceivePurchaseOrderSchema = z.object({
   id: z.string().uuid(),
   supplierInvoiceNumber: z.string().trim().max(100).default(''),
 });
+export const PurchaseReturnInputSchema = z.object({
+  purchaseOrderId: z.string().uuid(),
+  reason: z.string().trim().min(3).max(500),
+  lines: z
+    .array(
+      z.object({
+        purchaseOrderLineId: z.string().uuid(),
+        quantityMilli: z.number().int().positive().max(9_000_000_000),
+      }),
+    )
+    .min(1)
+    .max(200)
+    .refine(
+      (lines) => new Set(lines.map((line) => line.purchaseOrderLineId)).size === lines.length,
+      'A purchase-order line can appear only once per return.',
+    ),
+});
+export const PurchaseReturnableLineSchema = z.object({
+  purchaseOrderLineId: z.string().uuid(),
+  productId: z.string().uuid(),
+  productName: z.string(),
+  sku: z.string(),
+  quantityReceivedMilli: z.number().int().nonnegative(),
+  quantityReturnedMilli: z.number().int().nonnegative(),
+  returnableQuantityMilli: z.number().int().nonnegative(),
+  unitCostMinor: z.number().int().nonnegative(),
+});
+export const PurchaseReturnSummarySchema = z.object({
+  id: z.string().uuid(),
+  returnNumber: z.string(),
+  purchaseOrderId: z.string().uuid(),
+  orderNumber: z.string(),
+  supplierId: z.string().uuid(),
+  supplierName: z.string(),
+  reason: z.string(),
+  totalMinor: z.number().int().nonnegative(),
+  lineCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+export type PurchaseReturnInput = z.infer<typeof PurchaseReturnInputSchema>;
+export type PurchaseReturnableLine = z.infer<typeof PurchaseReturnableLineSchema>;
+export type PurchaseReturnSummary = z.infer<typeof PurchaseReturnSummarySchema>;
 export const PurchaseOrderSummarySchema = z.object({
   id: z.string().uuid(),
   orderNumber: z.string(),
@@ -73,4 +115,7 @@ export interface PurchasingApi {
   createPurchaseOrder(input: PurchaseOrderInput): Promise<PurchaseOrderSummary>;
   receivePurchaseOrder(input: ReceivePurchaseOrderInput): Promise<PurchaseOrderSummary>;
   cancelPurchaseOrder(id: string): Promise<void>;
+  listReturnablePurchaseOrderLines(orderId: string): Promise<PurchaseReturnableLine[]>;
+  createPurchaseReturn(input: PurchaseReturnInput): Promise<PurchaseReturnSummary>;
+  listPurchaseReturns(): Promise<PurchaseReturnSummary[]>;
 }

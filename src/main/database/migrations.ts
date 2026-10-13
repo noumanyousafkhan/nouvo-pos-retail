@@ -562,6 +562,74 @@ export const migrations: Migration[] = [
         );
     `,
   },
+  {
+    version: 11,
+    name: 'supplier_returns_and_accounting_sources',
+    sql: `
+      CREATE TABLE journal_entries_new (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        entry_number TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('sale','sale_return','purchase_receipt','purchase_return','supplier_payment','manual','reversal')),
+        source_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'posted' CHECK (status IN ('posted','reversed')),
+        currency_code TEXT NOT NULL CHECK (length(currency_code) = 3),
+        description TEXT NOT NULL,
+        posted_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        posted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, entry_number),
+        UNIQUE (store_id, source_type, source_id)
+      ) STRICT;
+      INSERT INTO journal_entries_new SELECT id,store_id,entry_number,source_type,source_id,status,currency_code,description,posted_by_user_id,posted_at FROM journal_entries;
+      CREATE TABLE journal_lines_new (
+        id TEXT PRIMARY KEY,
+        journal_entry_id TEXT NOT NULL REFERENCES journal_entries_new(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        line_number INTEGER NOT NULL CHECK (line_number > 0),
+        debit_minor INTEGER NOT NULL DEFAULT 0 CHECK (debit_minor >= 0),
+        credit_minor INTEGER NOT NULL DEFAULT 0 CHECK (credit_minor >= 0),
+        memo TEXT NOT NULL DEFAULT '',
+        CHECK ((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0)),
+        UNIQUE (journal_entry_id, line_number)
+      ) STRICT;
+      INSERT INTO journal_lines_new SELECT id,journal_entry_id,account_id,line_number,debit_minor,credit_minor,memo FROM journal_lines;
+      DROP TABLE journal_lines;
+      DROP TABLE journal_entries;
+      ALTER TABLE journal_entries_new RENAME TO journal_entries;
+      ALTER TABLE journal_lines_new RENAME TO journal_lines;
+      CREATE INDEX journal_entries_store_time_idx ON journal_entries(store_id, posted_at DESC);
+      CREATE INDEX journal_entries_source_idx ON journal_entries(source_type, source_id);
+      CREATE INDEX journal_lines_account_idx ON journal_lines(account_id, journal_entry_id);
+
+      CREATE TABLE purchase_returns (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        return_number TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (length(trim(reason)) >= 3),
+        total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+        created_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, return_number)
+      ) STRICT;
+      CREATE INDEX purchase_returns_order_idx ON purchase_returns(purchase_order_id, created_at DESC);
+      CREATE TABLE purchase_return_lines (
+        id TEXT PRIMARY KEY,
+        purchase_return_id TEXT NOT NULL REFERENCES purchase_returns(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        purchase_order_line_id TEXT NOT NULL REFERENCES purchase_order_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_id TEXT NOT NULL REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        quantity_milli INTEGER NOT NULL CHECK (quantity_milli > 0),
+        unit_cost_minor INTEGER NOT NULL CHECK (unit_cost_minor >= 0),
+        line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0),
+        UNIQUE (purchase_return_id, purchase_order_line_id)
+      ) STRICT;
+      CREATE INDEX purchase_return_lines_order_line_idx ON purchase_return_lines(purchase_order_line_id);
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','purchasing.return'),('manager','purchasing.return'),('inventory_manager','purchasing.return');
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

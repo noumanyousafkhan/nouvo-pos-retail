@@ -29,6 +29,7 @@
 | Completed sale      | Cash on Hand for cash; Non-cash Payment Clearing for other payment methods                | Sales Revenue for net-of-tax sale amount; Sales Tax Payable for tax | Cash applied to the sale is used, not amount tendered; change due is excluded from drawer increase. |
 | Sale return or void | Sales Returns and Allowances for refund excluding tax; Sales Tax Payable for tax refunded | Cash on Hand for cash refund; Non-cash Payment Clearing otherwise   | Inventory is debited and COGS credited for returned quantities at the original recorded unit cost.  |
 | Goods received      | Inventory                                                                                 | Accounts Payable                                                    | Supplier invoice is recorded as a liability; supplier payment settlement is not yet implemented.    |
+| Supplier return     | Accounts Payable                                                                          | Inventory                                                           | Return is limited to received quantity still on hand; zero-value returns have no monetary journal.  |
 
 ## Ledger invariants
 
@@ -36,8 +37,8 @@
 - Business event and journal posting run in the same SQLite transaction.
 - Every line is exactly one-sided (debit or credit); zero-sided lines and lines with both sides populated are rejected.
 - Posting validates that total debits equal total credits before persistence.
-- Posted rows are not edited by these workflows; corrections require a separate reversing-entry workflow that is not yet implemented.
+- Posted rows are not edited by these workflows; manual journal corrections use a separate balanced reversing entry with a required reason and audit trail.
 
 ## Not yet covered
 
-Manual journals and reversals, supplier payments/aging, payment processor settlement, purchase returns, discounts, payment-method-specific clearing accounts, inventory adjustments, financial statements, and accountant-approved tax/reporting rules. Weighted-average costing is provisional: the existing product cost field is a current average estimate, not yet a full perpetual valuation ledger. The default account mappings and all tax assumptions require sign-off before production financial use.
+Supplier payments/aging, payment processor settlement, discounts, payment-method-specific clearing accounts, inventory adjustments, financial statements, and accountant-approved tax/reporting rules. Manual journals/reversals and supplier returns are implemented. Weighted-average costing remains provisional: the existing product cost field is a current average estimate, not yet a full perpetual valuation ledger. The default account mappings and all tax assumptions require sign-off before production financial use.

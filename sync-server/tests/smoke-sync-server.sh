@@ -100,8 +100,17 @@ DUP_RETURN="$(curl -fsS -H "$AUTH_HEADER" -H 'content-type: application/json' -d
 assert_rejected "$DUP_RETURN"
 echo "PASS duplicate return cannot inflate stock"
 
+SUPPLIER_RETURN_MOVEMENT_ID="$(uuid)"
+SUPPLIER_RETURN_EVENT_ID="$(uuid)"
+SUPPLIER_RETURN_ID="$(uuid)"
+SUPPLIER_RETURN_PAYLOAD="$(printf '{"schemaVersion":1,"movementId":"%s","storeId":"%s","counterId":"%s","productId":"%s","movementType":"adjustment","quantityDeltaMilli":-1000,"unitCostMinor":50,"referenceType":"purchase_return","referenceId":"%s","reason":"Supplier return integration test"}' "$SUPPLIER_RETURN_MOVEMENT_ID" "$STORE_ID" "$COUNTER_ID" "$PRODUCT_ID" "$SUPPLIER_RETURN_ID")"
+SUPPLIER_RETURN_BODY="$(make_batch "$SUPPLIER_RETURN_EVENT_ID" stock.movement.recorded stock_movement "$SUPPLIER_RETURN_MOVEMENT_ID" "$SUPPLIER_RETURN_PAYLOAD")"
+SUPPLIER_RETURN_RESULT="$(curl -fsS -H "$AUTH_HEADER" -H 'content-type: application/json' -d "$SUPPLIER_RETURN_BODY" "$BASE_URL/api/v1/sync/events")"
+assert_accepted "$SUPPLIER_RETURN_RESULT" "$SUPPLIER_RETURN_EVENT_ID"
+echo "PASS supplier return reduces both central stock and the originating counter allocation"
+
 SNAPSHOT="$(curl -fsS -H "$AUTH_HEADER" -H "x-counter-id: $COUNTER_ID" "$BASE_URL/api/v1/sync/snapshot")"
-printf '%s' "$SNAPSHOT" | PRODUCT_ID="$PRODUCT_ID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(x.allocations?.find(a=>a.productId===process.env.PRODUCT_ID)?.quantityMilli!==3000)process.exit(1);if(!x.products?.find(p=>p.id===process.env.PRODUCT_ID)?.barcodes?.length)process.exit(1);if(x.settings?.name!=="Updated Integration Store"||x.settings?.receiptPaperWidthMm!==80)process.exit(1);console.log("PASS settings, product/barcode snapshot and remaining allocation")})'
+printf '%s' "$SNAPSHOT" | PRODUCT_ID="$PRODUCT_ID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(x.allocations?.find(a=>a.productId===process.env.PRODUCT_ID)?.quantityMilli!==2000)process.exit(1);if(!x.products?.find(p=>p.id===process.env.PRODUCT_ID)?.barcodes?.length)process.exit(1);if(x.settings?.name!=="Updated Integration Store"||x.settings?.receiptPaperWidthMm!==80)process.exit(1);console.log("PASS settings, product/barcode snapshot and remaining allocation")})'
 
 OVERSELL_ID="$(uuid)"
 OVERSELL_EVENT_ID="$(uuid)"

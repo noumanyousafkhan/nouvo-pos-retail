@@ -219,6 +219,43 @@ export class AccountingService {
     });
   }
 
+  postPurchaseReturn(returnId: string): string {
+    this.ensureChartOfAccounts();
+    const prior = this.findExisting('purchase_return', returnId);
+    if (prior) return prior;
+    const purchaseReturn = this.database
+      .prepare(
+        'SELECT id, return_number, total_minor FROM purchase_returns WHERE id=? AND store_id=?',
+      )
+      .get(returnId, this.storeId) as
+      { id: string; return_number: string; total_minor: number } | undefined;
+    if (!purchaseReturn) throw new Error('Cannot post accounting: supplier return was not found.');
+    if (purchaseReturn.total_minor <= 0)
+      throw new Error('Zero-value supplier returns do not require a financial journal.');
+    const currency = this.database
+      .prepare('SELECT currency_code FROM stores WHERE id=?')
+      .get(this.storeId) as { currency_code: string } | undefined;
+    if (!currency) throw new Error('Store currency is not configured.');
+    return this.postBalanced({
+      sourceType: 'purchase_return',
+      sourceId: returnId,
+      currencyCode: currency.currency_code,
+      description: `Supplier return ${purchaseReturn.return_number}`,
+      lines: [
+        {
+          accountCode: '2000',
+          debitMinor: purchaseReturn.total_minor,
+          memo: `Reduce supplier payable ${purchaseReturn.return_number}`,
+        },
+        {
+          accountCode: '1200',
+          creditMinor: purchaseReturn.total_minor,
+          memo: `Inventory returned to supplier ${purchaseReturn.return_number}`,
+        },
+      ],
+    });
+  }
+
   listAccounts(): {
     id: string;
     code: string;
@@ -558,7 +595,7 @@ export class AccountingService {
   }
 
   private postBalanced(input: {
-    sourceType: 'sale' | 'sale_return' | 'purchase_receipt';
+    sourceType: 'sale' | 'sale_return' | 'purchase_receipt' | 'purchase_return';
     sourceId: string;
     currencyCode: string;
     description: string;

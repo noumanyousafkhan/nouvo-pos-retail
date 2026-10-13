@@ -55,6 +55,7 @@ describe('local SQLite database foundation', () => {
         { version: 8, name: 'double_entry_accounting_ledger' },
         { version: 9, name: 'sync_status_and_outbox_diagnostics' },
         { version: 10, name: 'counter_stock_allocation_enforcement' },
+        { version: 11, name: 'supplier_returns_and_accounting_sources' },
       ]);
       expect(
         database.connection
@@ -64,7 +65,84 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 10 });
+      ).toEqual({ count: 11 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('preserves existing posted journals when migration 11 extends accounting source types', () => {
+    const database = new DatabaseSync(':memory:');
+    try {
+      database.exec('PRAGMA foreign_keys = ON');
+      database.exec(`
+        CREATE TABLE schema_migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          checksum TEXT NOT NULL,
+          applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        ) STRICT;
+      `);
+      for (const migration of migrations.slice(0, 10)) {
+        database.exec('BEGIN IMMEDIATE');
+        database.exec(migration.sql);
+        database
+          .prepare('INSERT INTO schema_migrations (version,name,checksum) VALUES (?,?,?)')
+          .run(migration.version, migration.name, migrationChecksum(migration));
+        database.exec('COMMIT');
+      }
+      const storeId = '10000000-0000-4000-8000-000000000001';
+      const counterId = '20000000-0000-4000-8000-000000000001';
+      const userId = '30000000-0000-4000-8000-000000000001';
+      const cashId = '40000000-0000-4000-8000-000000000001';
+      const revenueId = '50000000-0000-4000-8000-000000000001';
+      const journalId = '60000000-0000-4000-8000-000000000001';
+      database.prepare('INSERT INTO stores (id,name) VALUES (?,?)').run(storeId, 'Migration Store');
+      database
+        .prepare('INSERT INTO counters (id,store_id,name) VALUES (?,?,?)')
+        .run(counterId, storeId, 'Counter');
+      database
+        .prepare(
+          "INSERT INTO users (id,store_id,username,display_name,password_hash,role) VALUES (?,?,'owner','Owner','test-hash','owner')",
+        )
+        .run(userId, storeId);
+      database
+        .prepare(
+          'INSERT INTO accounts (id,store_id,code,name,account_type,normal_balance) VALUES (?,?,?,?,?,?)',
+        )
+        .run(cashId, storeId, '1000', 'Cash', 'asset', 'debit');
+      database
+        .prepare(
+          'INSERT INTO accounts (id,store_id,code,name,account_type,normal_balance) VALUES (?,?,?,?,?,?)',
+        )
+        .run(revenueId, storeId, '4000', 'Revenue', 'income', 'credit');
+      database
+        .prepare(
+          "INSERT INTO journal_entries (id,store_id,entry_number,source_type,source_id,status,currency_code,description,posted_by_user_id) VALUES (?,?,?,'manual',?,'posted','PKR','Preserve me',?)",
+        )
+        .run(journalId, storeId, 'JE-20261013-0001', journalId, userId);
+      database
+        .prepare(
+          'INSERT INTO journal_lines (id,journal_entry_id,account_id,line_number,debit_minor,credit_minor) VALUES (?,?,?,?,?,?)',
+        )
+        .run('70000000-0000-4000-8000-000000000001', journalId, cashId, 1, 100, 0);
+      database
+        .prepare(
+          'INSERT INTO journal_lines (id,journal_entry_id,account_id,line_number,debit_minor,credit_minor) VALUES (?,?,?,?,?,?)',
+        )
+        .run('80000000-0000-4000-8000-000000000001', journalId, revenueId, 2, 0, 100);
+      applyMigrations(database);
+      expect(
+        database
+          .prepare('SELECT description,source_type AS sourceType FROM journal_entries WHERE id=?')
+          .get(journalId),
+      ).toEqual({ description: 'Preserve me', sourceType: 'manual' });
+      expect(
+        database
+          .prepare('SELECT COUNT(*) AS count FROM journal_lines WHERE journal_entry_id=?')
+          .get(journalId),
+      ).toEqual({ count: 2 });
+      expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally {
       database.close();
     }

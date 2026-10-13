@@ -2733,3 +2733,68 @@ a:focus-visible {
     padding-right: 18px;
   }
 }
+.purchasing-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 28 48 / 48%);
+  backdrop-filter: blur(3px);
+}
+.purchasing-return-modal {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 980px);
+  max-height: min(90vh, 820px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--border-color, #e6e9f0);
+  border-radius: 18px;
+  background: var(--surface-card, #fff);
+  box-shadow: 0 24px 80px rgb(15 28 48 / 25%);
+}
+.purchasing-return-modal .purchasing-card-heading {
+  margin-bottom: 0;
+}
+.purchasing-return-modal .purchasing-card-heading h2 {
+  margin: 0;
+}
+.purchasing-return-modal .purchasing-card-heading p {
+  margin-top: 6px;
+}
+.purchasing-return-modal .purchasing-card-heading > button {
+  border: 0;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 22px;
+  cursor: pointer;
+}
+.purchasing-return-modal textarea,
+.purchasing-return-modal input[type='number'] {
+  width: 100%;
+  min-width: 92px;
+  border: 1px solid var(--border-color, #dce4ef);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--text-primary, #263752);
+  background: var(--surface-card, #fff);
+  font: inherit;
+}
+.purchasing-return-modal .inventory-field {
+  display: grid;
+  gap: 8px;
+}
+.purchasing-return-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+@media (max-width: 700px) {
+  .purchasing-return-modal {
+    padding: 16px;
+  }
+}

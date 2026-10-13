@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import {
   PurchaseOrderInputSchema,
+  PurchaseReturnInputSchema,
   ReceivePurchaseOrderSchema,
   SupplierInputSchema,
 } from '../../shared/contracts/purchasing';
@@ -15,6 +16,9 @@ const channels = [
   'purchasing:create-order',
   'purchasing:receive-order',
   'purchasing:cancel-order',
+  'purchasing:list-returnable-lines',
+  'purchasing:create-return',
+  'purchasing:list-returns',
 ] as const;
 function service() {
   const database = getLocalDatabaseConnection();
@@ -64,5 +68,19 @@ export function registerPurchasingIpcHandlers(): void {
       getLocalCounterId(),
       actor.userId,
     ).cancelPurchaseOrder(rawId);
+  });
+  ipcMain.handle('purchasing:list-returnable-lines', (_event, rawId: unknown) =>
+    service().listReturnablePurchaseOrderLines(rawId),
+  );
+  ipcMain.handle('purchasing:list-returns', () => service().listPurchaseReturns());
+  ipcMain.handle('purchasing:create-return', (_event, rawInput: unknown) => {
+    const database = getLocalDatabaseConnection();
+    const actor = requirePermission(database, 'purchasing.return');
+    return new PurchasingService(
+      database,
+      getLocalStoreId(),
+      getLocalCounterId(),
+      actor.userId,
+    ).createPurchaseReturn(PurchaseReturnInputSchema.parse(rawInput));
   });
 }
