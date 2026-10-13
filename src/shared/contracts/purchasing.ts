@@ -47,6 +47,31 @@ export const PurchaseOrderInputSchema = z
 export const ReceivePurchaseOrderSchema = z.object({
   id: z.string().uuid(),
   supplierInvoiceNumber: z.string().trim().max(100).default(''),
+  lines: z
+    .array(
+      z.object({
+        purchaseOrderLineId: z.string().uuid(),
+        quantityReceivedMilli: z.number().int().min(0).max(9_000_000_000),
+      }),
+    )
+    .max(200)
+    .default([])
+    .refine(
+      (lines) => new Set(lines.map((line) => line.purchaseOrderLineId)).size === lines.length,
+      'A purchase-order line can appear only once per receipt.',
+    ),
+  finalizeOrder: z.boolean().default(true),
+  discrepancyReason: z.string().trim().max(500).default(''),
+});
+export const PurchaseOrderReceivingLineSchema = z.object({
+  purchaseOrderLineId: z.string().uuid(),
+  productId: z.string().uuid(),
+  productName: z.string(),
+  sku: z.string(),
+  quantityOrderedMilli: z.number().int().positive(),
+  quantityPreviouslyReceivedMilli: z.number().int().nonnegative(),
+  remainingQuantityMilli: z.number().int().nonnegative(),
+  unitCostMinor: z.number().int().nonnegative(),
 });
 export const PurchaseReturnInputSchema = z.object({
   purchaseOrderId: z.string().uuid(),
@@ -88,6 +113,7 @@ export const PurchaseReturnSummarySchema = z.object({
   createdAt: z.string(),
 });
 export type PurchaseReturnInput = z.infer<typeof PurchaseReturnInputSchema>;
+export type PurchaseOrderReceivingLine = z.infer<typeof PurchaseOrderReceivingLineSchema>;
 export type PurchaseReturnableLine = z.infer<typeof PurchaseReturnableLineSchema>;
 export type PurchaseReturnSummary = z.infer<typeof PurchaseReturnSummarySchema>;
 export const SupplierPaymentInputSchema = z
@@ -146,12 +172,13 @@ export type SupplierInput = z.infer<typeof SupplierInputSchema>;
 export type Supplier = z.infer<typeof SupplierSchema>;
 export type PurchaseOrderInput = z.infer<typeof PurchaseOrderInputSchema>;
 export type PurchaseOrderSummary = z.infer<typeof PurchaseOrderSummarySchema>;
-export type ReceivePurchaseOrderInput = z.infer<typeof ReceivePurchaseOrderSchema>;
+export type ReceivePurchaseOrderInput = z.input<typeof ReceivePurchaseOrderSchema>;
 export interface PurchasingApi {
   listSuppliers(): Promise<Supplier[]>;
   saveSupplier(input: SupplierInput): Promise<Supplier>;
   listPurchaseOrders(): Promise<PurchaseOrderSummary[]>;
   createPurchaseOrder(input: PurchaseOrderInput): Promise<PurchaseOrderSummary>;
+  listPurchaseOrderReceivingLines(orderId: string): Promise<PurchaseOrderReceivingLine[]>;
   receivePurchaseOrder(input: ReceivePurchaseOrderInput): Promise<PurchaseOrderSummary>;
   cancelPurchaseOrder(id: string): Promise<void>;
   listReturnablePurchaseOrderLines(orderId: string): Promise<PurchaseReturnableLine[]>;

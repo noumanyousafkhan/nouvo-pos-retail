@@ -123,9 +123,37 @@ async function main() {
         notes: 'Packaged supplier return smoke test',
         lines: [{ productId: product.id, quantityMilli: 2000, unitCostMinor: 100 }],
       });
+      const receivingLines = await window.nouvo.listPurchaseOrderReceivingLines(order.id);
       await window.nouvo.receivePurchaseOrder({
         id: order.id,
         supplierInvoiceNumber: 'E2E-SUP-INV',
+        lines: [
+          {
+            purchaseOrderLineId: receivingLines[0].purchaseOrderLineId,
+            quantityReceivedMilli: 1000,
+          },
+        ],
+        finalizeOrder: false,
+      });
+      const remainingLines = await window.nouvo.listPurchaseOrderReceivingLines(order.id);
+      if (
+        remainingLines[0]?.quantityPreviouslyReceivedMilli !== 1000 ||
+        remainingLines[0]?.remainingQuantityMilli !== 1000
+      ) {
+        throw new Error(
+          'Packaged partial purchase receipt did not preserve the remaining quantity.',
+        );
+      }
+      await window.nouvo.receivePurchaseOrder({
+        id: order.id,
+        supplierInvoiceNumber: 'E2E-SUP-INV',
+        lines: [
+          {
+            purchaseOrderLineId: remainingLines[0].purchaseOrderLineId,
+            quantityReceivedMilli: 1000,
+          },
+        ],
+        finalizeOrder: true,
       });
       return { orderId: order.id, productId: product.id, orderNumber: order.orderNumber };
     });

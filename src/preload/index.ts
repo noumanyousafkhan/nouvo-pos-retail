@@ -15,6 +15,7 @@ import type {
 } from '../shared/contracts/cash-sessions';
 import type {
   PurchaseOrderInput,
+  PurchaseOrderReceivingLine,
   PurchaseReturnInput,
   SupplierPaymentInput,
   ReceivePurchaseOrderInput,
@@ -37,6 +38,8 @@ const api: NouvoApi = Object.freeze({
   listPurchaseOrders: () => ipcRenderer.invoke('purchasing:list-orders'),
   createPurchaseOrder: (input: PurchaseOrderInput) =>
     ipcRenderer.invoke('purchasing:create-order', input),
+  listPurchaseOrderReceivingLines: (id: string): Promise<PurchaseOrderReceivingLine[]> =>
+    ipcRenderer.invoke('purchasing:list-receiving-lines', id),
   receivePurchaseOrder: (input: ReceivePurchaseOrderInput) =>
     ipcRenderer.invoke('purchasing:receive-order', input),
   cancelPurchaseOrder: (id: string) => ipcRenderer.invoke('purchasing:cancel-order', id),

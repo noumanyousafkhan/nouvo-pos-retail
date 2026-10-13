@@ -112,6 +112,106 @@ describe('purchasing service', () => {
     ).toEqual({ count: 1 });
   });
 
+  it('supports multiple partial receipts and finalizes a short delivery using actual received value', () => {
+    const { database, storeId, counterId, productId, service } = setup();
+    const supplier = service.saveSupplier({ name: 'Partial Delivery Supplier' });
+    const order = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 4000, unitCostMinor: 800 }],
+    });
+    const line = service.listPurchaseOrderReceivingLines(order.id)[0]!;
+    expect(line).toMatchObject({
+      quantityOrderedMilli: 4000,
+      quantityPreviouslyReceivedMilli: 0,
+      remainingQuantityMilli: 4000,
+    });
+
+    const first = service.receivePurchaseOrder({
+      id: order.id,
+      lines: [{ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli: 1500 }],
+      finalizeOrder: false,
+    });
+    expect(first.status).toBe('draft');
+    expect(service.listPurchaseOrderReceivingLines(order.id)[0]).toMatchObject({
+      quantityPreviouslyReceivedMilli: 1500,
+      remainingQuantityMilli: 2500,
+    });
+    expect(service.listSupplierBalances()).toHaveLength(0);
+
+    service.receivePurchaseOrder({
+      id: order.id,
+      lines: [{ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli: 1000 }],
+      finalizeOrder: false,
+    });
+    const finalized = service.receivePurchaseOrder({
+      id: order.id,
+      lines: [{ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli: 1000 }],
+      finalizeOrder: true,
+      discrepancyReason: 'Supplier delivered 500 fewer units than ordered.',
+    });
+    expect(finalized.status).toBe('received');
+    expect(
+      database.connection
+        .prepare(
+          'SELECT received_subtotal_minor,receipt_discrepancy_note,receipt_discrepancy_json FROM purchase_orders WHERE id=?',
+        )
+        .get(order.id),
+    ).toMatchObject({
+      received_subtotal_minor: 2800,
+      receipt_discrepancy_note: 'Supplier delivered 500 fewer units than ordered.',
+      receipt_discrepancy_json: JSON.stringify([
+        { purchaseOrderLineId: line.purchaseOrderLineId, productId, quantityShortMilli: 500 },
+      ]),
+    });
+    expect(
+      database.connection
+        .prepare('SELECT COUNT(*) AS count FROM purchase_receipts WHERE purchase_order_id=?')
+        .get(order.id),
+    ).toEqual({ count: 3 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT SUM(quantity_delta_milli) AS quantity FROM stock_movements WHERE product_id=? AND counter_id=?',
+        )
+        .get(productId, counterId),
+    ).toEqual({ quantity: 3500 });
+    expect(service.listSupplierBalances()[0]).toMatchObject({
+      originalAmountMinor: 2800,
+      outstandingMinor: 2800,
+    });
+    expect(
+      database.connection
+        .prepare(
+          "SELECT SUM(jl.debit_minor) AS debit,SUM(jl.credit_minor) AS credit FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id WHERE je.source_type='purchase_receipt' AND je.source_id=?",
+        )
+        .get(order.id),
+    ).toEqual({ debit: 2800, credit: 2800 });
+    expect(database.connection.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+
+  it('rejects over-receiving a purchase line without creating a receipt or stock movement', () => {
+    const { database, productId, service } = setup();
+    const supplier = service.saveSupplier({ name: 'Strict Quantity Supplier' });
+    const order = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 2000, unitCostMinor: 800 }],
+    });
+    const line = service.listPurchaseOrderReceivingLines(order.id)[0]!;
+    expect(() =>
+      service.receivePurchaseOrder({
+        id: order.id,
+        lines: [{ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli: 2001 }],
+        finalizeOrder: false,
+      }),
+    ).toThrow(/cannot exceed/i);
+    expect(
+      database.connection.prepare('SELECT COUNT(*) AS count FROM purchase_receipts').get(),
+    ).toEqual({ count: 0 });
+    expect(
+      database.connection.prepare('SELECT COUNT(*) AS count FROM stock_movements').get(),
+    ).toEqual({ count: 0 });
+  });
+
   it('posts supplier returns atomically, reduces stock and posts a balanced payable/inventory journal', () => {
     const { database, storeId, counterId, productId, service } = setup();
     const supplier = service.saveSupplier({ name: 'Wholesale Foods' });
@@ -281,6 +381,32 @@ describe('purchasing service', () => {
         .get(first.id, second.id),
     ).toEqual({ count: 2 });
     expect(database.connection.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+
+  it('prevents cancelling an order after any goods have been partially received', () => {
+    const { database, productId, service } = setup();
+    const supplier = service.saveSupplier({ name: 'Partial Cancel Supplier' });
+    const order = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 2000, unitCostMinor: 0 }],
+    });
+    const line = service.listPurchaseOrderReceivingLines(order.id)[0]!;
+    service.receivePurchaseOrder({
+      id: order.id,
+      lines: [{ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli: 1000 }],
+      finalizeOrder: false,
+    });
+    expect(() => service.cancelPurchaseOrder(order.id)).toThrow(
+      /received goods cannot be cancelled/i,
+    );
+    expect(service.listPurchaseOrders()[0]?.status).toBe('draft');
+    expect(
+      database.connection
+        .prepare(
+          'SELECT SUM(quantity_received_milli) AS quantity FROM purchase_order_lines WHERE purchase_order_id=?',
+        )
+        .get(order.id),
+    ).toEqual({ quantity: 1000 });
   });
 
   it('cancels only draft orders and does not create stock movements', () => {

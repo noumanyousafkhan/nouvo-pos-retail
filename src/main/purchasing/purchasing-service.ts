@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   PurchaseOrderInputSchema,
   PurchaseOrderSummarySchema,
+  PurchaseOrderReceivingLineSchema,
   PurchaseReturnInputSchema,
   PurchaseReturnSummarySchema,
   PurchaseReturnableLineSchema,
@@ -13,6 +14,7 @@ import {
   SupplierInputSchema,
   SupplierSchema,
   type PurchaseOrderSummary,
+  type PurchaseOrderReceivingLine,
   type PurchaseReturnInput,
   type PurchaseReturnSummary,
   type PurchaseReturnableLine,
@@ -268,12 +270,38 @@ export class PurchasingService {
     });
   }
 
+  listPurchaseOrderReceivingLines(rawOrderId: unknown): PurchaseOrderReceivingLine[] {
+    if (typeof rawOrderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(rawOrderId))
+      throw new Error('Purchase order ID is invalid.');
+    const order = this.database
+      .prepare(
+        "SELECT id FROM purchase_orders WHERE id=? AND store_id=? AND counter_id=? AND status='draft'",
+      )
+      .get(rawOrderId, this.storeId, this.counterId);
+    if (!order) throw new Error('Only a draft purchase order from this counter can be received.');
+    const rows = this.database
+      .prepare(
+        `
+      SELECT pol.id AS purchaseOrderLineId, pol.product_id AS productId,
+        pol.product_name_snapshot AS productName, COALESCE(pol.sku_snapshot,'') AS sku,
+        pol.quantity_ordered_milli AS quantityOrderedMilli,
+        pol.quantity_received_milli AS quantityPreviouslyReceivedMilli,
+        pol.quantity_ordered_milli-pol.quantity_received_milli AS remainingQuantityMilli,
+        pol.unit_cost_minor AS unitCostMinor
+      FROM purchase_order_lines pol WHERE pol.purchase_order_id=? ORDER BY pol.created_at, pol.id
+    `,
+      )
+      .all(rawOrderId) as unknown as PurchaseOrderReceivingLine[];
+    return rows.map((row) => PurchaseOrderReceivingLineSchema.parse(row));
+  }
+
   receivePurchaseOrder(rawInput: unknown): PurchaseOrderSummary {
     const input = ReceivePurchaseOrderSchema.parse(rawInput);
     return runInTransaction(this.database, () => {
       const order = this.database
         .prepare(
-          'SELECT id, order_number, supplier_id, supplier_invoice_number, status, subtotal_minor FROM purchase_orders WHERE id = ? AND store_id = ? AND counter_id = ?',
+          `SELECT id, order_number, supplier_id, supplier_invoice_number, status, subtotal_minor,
+          received_subtotal_minor FROM purchase_orders WHERE id=? AND store_id=? AND counter_id=?`,
         )
         .get(input.id, this.storeId, this.counterId) as unknown as
         | {
@@ -283,60 +311,156 @@ export class PurchasingService {
             supplier_invoice_number: string | null;
             status: string;
             subtotal_minor: number;
+            received_subtotal_minor: number;
           }
         | undefined;
       if (!order) throw new Error('Purchase order was not found for this counter.');
       if (order.status !== 'draft') throw new Error('Only draft purchase orders can be received.');
       const lines = this.database
         .prepare(
-          'SELECT id, product_id, quantity_ordered_milli, unit_cost_minor FROM purchase_order_lines WHERE purchase_order_id = ?',
+          `SELECT id, product_id, quantity_ordered_milli, quantity_received_milli, unit_cost_minor
+         FROM purchase_order_lines WHERE purchase_order_id=? ORDER BY created_at, id`,
         )
         .all(order.id) as unknown as {
         id: string;
         product_id: string;
         quantity_ordered_milli: number;
+        quantity_received_milli: number;
         unit_cost_minor: number;
       }[];
       if (!lines.length) throw new Error('Cannot receive an empty purchase order.');
-      for (const line of lines) {
+      const requested = input.lines.length
+        ? new Map(input.lines.map((line) => [line.purchaseOrderLineId, line.quantityReceivedMilli]))
+        : new Map(
+            lines.map((line) => [
+              line.id,
+              line.quantity_ordered_milli - line.quantity_received_milli,
+            ]),
+          );
+      const knownIds = new Set(lines.map((line) => line.id));
+      if ([...requested.keys()].some((id) => !knownIds.has(id)))
+        throw new Error(
+          'A receiving line does not belong to this purchase order. Refresh and try again.',
+        );
+      const receiptLines = lines.map((line) => {
+        const remaining = line.quantity_ordered_milli - line.quantity_received_milli;
+        const quantity = requested.get(line.id) ?? 0;
+        if (quantity > remaining)
+          throw new Error('Received quantity cannot exceed the remaining quantity ordered.');
+        return { ...line, remaining, quantity };
+      });
+      if (!receiptLines.some((line) => line.quantity > 0) && !input.finalizeOrder)
+        throw new Error('Enter at least one received quantity before saving a partial receipt.');
+      if (
+        input.finalizeOrder &&
+        !input.discrepancyReason &&
+        receiptLines.some((line) => line.quantity < line.remaining)
+      )
+        throw new Error('Enter a discrepancy reason when finalizing an order with missing goods.');
+
+      const now = new Date().toISOString();
+      const invoiceNumber = input.supplierInvoiceNumber || order.supplier_invoice_number || '';
+      const datePart = now.slice(0, 10).replaceAll('-', '');
+      const prefix = `GRN-${datePart}-`;
+      const sequence = this.database
+        .prepare(
+          'SELECT COUNT(*) AS count FROM purchase_receipts WHERE store_id=? AND receipt_number LIKE ?',
+        )
+        .get(this.storeId, `${prefix}%`) as { count: number };
+      const receiptId = randomUUID();
+      const receiptNumber = `${prefix}${String(sequence.count + 1).padStart(4, '0')}`;
+      const receiptTotal = receiptLines.reduce(
+        (sum, line) => sum + Math.round((line.quantity * line.unit_cost_minor) / 1000),
+        0,
+      );
+      const discrepancies = receiptLines
+        .filter((line) => input.finalizeOrder && line.quantity < line.remaining)
+        .map((line) => ({
+          purchaseOrderLineId: line.id,
+          productId: line.product_id,
+          quantityShortMilli: line.remaining - line.quantity,
+        }));
+      this.database
+        .prepare(
+          `INSERT INTO purchase_receipts
+        (id,store_id,counter_id,purchase_order_id,receipt_number,supplier_invoice_number,discrepancy_note,total_minor,received_by_user_id)
+        VALUES (?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          receiptId,
+          this.storeId,
+          this.counterId,
+          order.id,
+          receiptNumber,
+          invoiceNumber,
+          input.discrepancyReason,
+          receiptTotal,
+          this.actorUserId,
+        );
+
+      for (const line of receiptLines) {
         const product = this.database
-          .prepare('SELECT name, purchase_cost_minor FROM products WHERE id = ? AND store_id = ?')
-          .get(line.product_id, this.storeId) as unknown as
+          .prepare('SELECT name,purchase_cost_minor FROM products WHERE id=? AND store_id=?')
+          .get(line.product_id, this.storeId) as
           { name: string; purchase_cost_minor: number } | undefined;
         if (!product) throw new Error('A product on this purchase order no longer exists.');
+        const lineTotal = Math.round((line.quantity * line.unit_cost_minor) / 1000);
+        this.database
+          .prepare(
+            `INSERT INTO purchase_receipt_lines
+          (id,purchase_receipt_id,purchase_order_line_id,product_id,quantity_ordered_milli,quantity_previously_received_milli,quantity_received_milli,quantity_short_milli,unit_cost_minor,line_total_minor)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            randomUUID(),
+            receiptId,
+            line.id,
+            line.product_id,
+            line.quantity_ordered_milli,
+            line.quantity_received_milli,
+            line.quantity,
+            input.finalizeOrder ? line.remaining - line.quantity : 0,
+            line.unit_cost_minor,
+            lineTotal,
+          );
+        if (line.quantity <= 0) continue;
         const current = this.database
           .prepare(
-            'SELECT COALESCE(SUM(quantity_delta_milli),0) AS quantity FROM stock_movements WHERE product_id = ? AND counter_id = ?',
+            'SELECT COALESCE(SUM(quantity_delta_milli),0) AS quantity FROM stock_movements WHERE product_id=? AND counter_id=?',
           )
           .get(line.product_id, this.counterId) as { quantity: number };
-        const newQuantity = current.quantity + line.quantity_ordered_milli;
-        const movementId = randomUUID();
+        const newQuantity = current.quantity + line.quantity;
         const averageCost =
           newQuantity > 0
             ? Math.round(
                 (current.quantity * product.purchase_cost_minor +
-                  line.quantity_ordered_milli * line.unit_cost_minor) /
+                  line.quantity * line.unit_cost_minor) /
                   newQuantity,
               )
             : line.unit_cost_minor;
+        const movementId = randomUUID();
         this.database
           .prepare(
-            "INSERT INTO stock_movements (id, store_id, counter_id, product_id, movement_type, quantity_delta_milli, unit_cost_minor, reference_type, reference_id, reason, actor_user_id) VALUES (?, ?, ?, ?, 'receipt', ?, ?, 'purchase_order', ?, ?, ?)",
+            `INSERT INTO stock_movements
+          (id,store_id,counter_id,product_id,movement_type,quantity_delta_milli,unit_cost_minor,reference_type,reference_id,reason,actor_user_id)
+          VALUES (?,?,?,?,'receipt',?,?,'purchase_order',?,?,?)`,
           )
           .run(
             movementId,
             this.storeId,
             this.counterId,
             line.product_id,
-            line.quantity_ordered_milli,
+            line.quantity,
             line.unit_cost_minor,
-            order.id,
-            `Goods received against ${order.order_number}`,
+            receiptId,
+            `Goods received ${receiptNumber} against ${order.order_number}`,
             this.actorUserId,
           );
         this.database
           .prepare(
-            "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'stock.movement.recorded', 'stock_movement', ?, ?)",
+            `INSERT INTO outbox_events
+          (id,event_type,aggregate_type,aggregate_id,payload_json)
+          VALUES (?,'stock.movement.recorded','stock_movement',?,?)`,
           )
           .run(
             randomUUID(),
@@ -348,14 +472,14 @@ export class PurchasingService {
               counterId: this.counterId,
               productId: line.product_id,
               movementType: 'receipt',
-              quantityDeltaMilli: line.quantity_ordered_milli,
+              quantityDeltaMilli: line.quantity,
               unitCostMinor: line.unit_cost_minor,
-              reason: `Goods received against ${order.order_number}`,
+              reason: `Goods received ${receiptNumber} against ${order.order_number}`,
             }),
           );
         this.database
-          .prepare('UPDATE products SET purchase_cost_minor = ?, updated_at = ? WHERE id = ?')
-          .run(averageCost, new Date().toISOString(), line.product_id);
+          .prepare('UPDATE products SET purchase_cost_minor=?,updated_at=? WHERE id=?')
+          .run(averageCost, now, line.product_id);
         const updatedProduct = new ProductRepository(this.database, this.counterId).findById(
           this.storeId,
           line.product_id,
@@ -363,7 +487,8 @@ export class PurchasingService {
         if (updatedProduct)
           this.database
             .prepare(
-              "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'product.updated', 'product', ?, ?)",
+              `INSERT INTO outbox_events
+          (id,event_type,aggregate_type,aggregate_id,payload_json) VALUES (?,'product.updated','product',?,?)`,
             )
             .run(
               randomUUID(),
@@ -372,12 +497,14 @@ export class PurchasingService {
             );
         this.database
           .prepare(
-            'UPDATE purchase_order_lines SET quantity_received_milli = quantity_ordered_milli WHERE id = ?',
+            'UPDATE purchase_order_lines SET quantity_received_milli=quantity_received_milli+? WHERE id=?',
           )
-          .run(line.id);
+          .run(line.quantity, line.id);
         this.database
           .prepare(
-            "INSERT INTO audit_events (id, store_id, actor_user_id, action, entity_type, entity_id, before_json, after_json) VALUES (?, ?, ?, 'purchase.received_line', 'product', ?, ?, ?)",
+            `INSERT INTO audit_events
+          (id,store_id,actor_user_id,action,entity_type,entity_id,before_json,after_json)
+          VALUES (?,?,?,'purchase.received_line','product',?,?,?)`,
           )
           .run(
             randomUUID(),
@@ -392,57 +519,86 @@ export class PurchasingService {
               quantityMilli: newQuantity,
               purchaseCostMinor: averageCost,
               purchaseOrderId: order.id,
+              receiptId,
             }),
           );
       }
-      const invoiceNumber = input.supplierInvoiceNumber || order.supplier_invoice_number;
+      const newReceivedSubtotal = order.received_subtotal_minor + receiptTotal;
+      const shouldFinalize = input.finalizeOrder;
       this.database
         .prepare(
-          "UPDATE purchase_orders SET status = 'received', supplier_invoice_number = ?, received_by_user_id = ?, received_at = ?, updated_at = ? WHERE id = ?",
+          `UPDATE purchase_orders SET supplier_invoice_number=?,
+        received_subtotal_minor=?, receipt_discrepancy_note=?, receipt_discrepancy_json=?,
+        status=?, received_by_user_id=?, received_at=?, updated_at=? WHERE id=?`,
         )
         .run(
           invoiceNumber || null,
-          this.actorUserId,
-          new Date().toISOString(),
-          new Date().toISOString(),
+          newReceivedSubtotal,
+          shouldFinalize ? input.discrepancyReason : '',
+          JSON.stringify(shouldFinalize ? discrepancies : []),
+          shouldFinalize ? 'received' : 'draft',
+          shouldFinalize ? this.actorUserId : null,
+          shouldFinalize ? now : null,
+          now,
           order.id,
         );
       this.database
         .prepare(
-          "INSERT INTO audit_events (id, store_id, actor_user_id, action, entity_type, entity_id, after_json) VALUES (?, ?, ?, 'purchase_order.received', 'purchase_order', ?, ?)",
+          `INSERT INTO audit_events
+        (id,store_id,actor_user_id,action,entity_type,entity_id,after_json)
+        VALUES (?,?,?,?,?,?,?)`,
         )
         .run(
           randomUUID(),
           this.storeId,
           this.actorUserId,
+          shouldFinalize ? 'purchase_order.received' : 'purchase_order.partially_received',
+          'purchase_order',
           order.id,
           JSON.stringify({
             orderNumber: order.order_number,
+            receiptNumber,
             supplierInvoiceNumber: invoiceNumber || null,
-            subtotalMinor: order.subtotal_minor,
-            lines: lines.length,
+            receiptTotalMinor: receiptTotal,
+            cumulativeReceivedMinor: newReceivedSubtotal,
+            discrepancyReason: input.discrepancyReason,
+            discrepancies,
           }),
         );
-      new AccountingService(this.database, this.storeId, this.actorUserId).postPurchaseReceipt(
-        order.id,
-      );
       this.database
         .prepare(
-          "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'purchase_order.received', 'purchase_order', ?, ?)",
+          `INSERT INTO outbox_events
+        (id,event_type,aggregate_type,aggregate_id,payload_json) VALUES (?,?,?,?,?)`,
         )
         .run(
           randomUUID(),
+          shouldFinalize ? 'purchase_order.received' : 'purchase_order.receipt.created',
+          'purchase_order',
           order.id,
           JSON.stringify({
             schemaVersion: 1,
             orderId: order.id,
             orderNumber: order.order_number,
+            receiptId,
+            receiptNumber,
             supplierInvoiceNumber: invoiceNumber || null,
+            receiptTotalMinor: receiptTotal,
+            cumulativeReceivedMinor: newReceivedSubtotal,
+            finalizeOrder: shouldFinalize,
+            discrepancyReason: input.discrepancyReason,
+            discrepancies,
           }),
+        );
+      if (shouldFinalize && newReceivedSubtotal > 0)
+        new AccountingService(this.database, this.storeId, this.actorUserId).postPurchaseReceipt(
+          order.id,
         );
       const row = this.database
         .prepare(
-          `SELECT po.id, po.order_number, po.supplier_id, su.name AS supplier_name, po.supplier_invoice_number, po.status, po.notes, po.subtotal_minor, (SELECT COUNT(*) FROM purchase_order_lines WHERE purchase_order_id = po.id) AS line_count, po.ordered_at, po.received_at FROM purchase_orders po JOIN suppliers su ON su.id = po.supplier_id WHERE po.id = ?`,
+          `SELECT po.id,po.order_number,po.supplier_id,su.name AS supplier_name,
+        po.supplier_invoice_number,po.status,po.notes,po.subtotal_minor,
+        (SELECT COUNT(*) FROM purchase_order_lines WHERE purchase_order_id=po.id) AS line_count,
+        po.ordered_at,po.received_at FROM purchase_orders po JOIN suppliers su ON su.id=po.supplier_id WHERE po.id=?`,
         )
         .get(order.id) as unknown as OrderRow;
       return mapOrder(row);
@@ -697,9 +853,9 @@ export class PurchasingService {
       .prepare(
         `SELECT po.id AS purchaseOrderId, po.order_number AS orderNumber,
           po.supplier_id AS supplierId, su.name AS supplierName,
-          po.supplier_invoice_number AS supplierInvoiceNumber,
+          COALESCE(po.supplier_invoice_number,'') AS supplierInvoiceNumber,
           COALESCE(po.received_at,po.ordered_at) AS receivedAt,
-          po.subtotal_minor AS originalAmountMinor,
+          po.received_subtotal_minor AS originalAmountMinor,
           COALESCE((SELECT SUM(pr.total_minor) FROM purchase_returns pr WHERE pr.purchase_order_id=po.id),0) AS returnedAmountMinor,
           COALESCE((SELECT SUM(sp.amount_minor) FROM supplier_payments sp WHERE sp.purchase_order_id=po.id),0) AS paidAmountMinor
         FROM purchase_orders po JOIN suppliers su ON su.id=po.supplier_id
@@ -761,7 +917,7 @@ export class PurchasingService {
     return runInTransaction(this.database, () => {
       const order = this.database
         .prepare(
-          `SELECT po.id, po.order_number, po.supplier_id, po.status, po.subtotal_minor,
+          `SELECT po.id, po.order_number, po.supplier_id, po.status, po.received_subtotal_minor AS subtotal_minor,
             COALESCE((SELECT SUM(pr.total_minor) FROM purchase_returns pr WHERE pr.purchase_order_id=po.id),0) AS returned_minor,
             COALESCE((SELECT SUM(sp.amount_minor) FROM supplier_payments sp WHERE sp.purchase_order_id=po.id),0) AS paid_minor
           FROM purchase_orders po WHERE po.id=? AND po.store_id=? AND po.counter_id=?`,
@@ -870,12 +1026,17 @@ export class PurchasingService {
     runInTransaction(this.database, () => {
       const order = this.database
         .prepare(
-          'SELECT id, order_number, status FROM purchase_orders WHERE id = ? AND store_id = ? AND counter_id = ?',
+          `SELECT po.id, po.order_number, po.status, EXISTS(SELECT 1 FROM purchase_order_lines pol WHERE pol.purchase_order_id=po.id AND pol.quantity_received_milli>0) AS has_received_goods FROM purchase_orders po WHERE po.id=? AND po.store_id=? AND po.counter_id=?`,
         )
         .get(rawId, this.storeId, this.counterId) as unknown as
-        { id: string; order_number: string; status: string } | undefined;
+        | { id: string; order_number: string; status: string; has_received_goods: number }
+        | undefined;
       if (!order) throw new Error('Purchase order was not found.');
       if (order.status !== 'draft') throw new Error('Only draft purchase orders can be cancelled.');
+      if (order.has_received_goods === 1)
+        throw new Error(
+          'A purchase order with received goods cannot be cancelled. Finalize the receipt or record the supplier discrepancy instead.',
+        );
       this.database
         .prepare("UPDATE purchase_orders SET status = 'cancelled', updated_at = ? WHERE id = ?")
         .run(new Date().toISOString(), order.id);

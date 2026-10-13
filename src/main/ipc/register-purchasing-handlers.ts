@@ -15,6 +15,7 @@ const channels = [
   'purchasing:save-supplier',
   'purchasing:list-orders',
   'purchasing:create-order',
+  'purchasing:list-receiving-lines',
   'purchasing:receive-order',
   'purchasing:cancel-order',
   'purchasing:list-returnable-lines',
@@ -53,6 +54,9 @@ export function registerPurchasingIpcHandlers(): void {
       actor.userId,
     ).createPurchaseOrder(PurchaseOrderInputSchema.parse(rawInput));
   });
+  ipcMain.handle('purchasing:list-receiving-lines', (_event, rawId: unknown) =>
+    service().listPurchaseOrderReceivingLines(rawId),
+  );
   ipcMain.handle('purchasing:receive-order', (_event, rawInput: unknown) => {
     const database = getLocalDatabaseConnection();
     const actor = requirePermission(database, 'purchasing.manage');

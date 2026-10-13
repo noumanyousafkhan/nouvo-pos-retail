@@ -655,6 +655,45 @@ export const migrations: Migration[] = [
         ('owner','purchasing.pay'),('manager','purchasing.pay');
     `,
   },
+  {
+    version: 13,
+    name: 'partial_purchase_receiving_and_discrepancies',
+    sql: `
+      ALTER TABLE purchase_orders ADD COLUMN received_subtotal_minor INTEGER NOT NULL DEFAULT 0 CHECK (received_subtotal_minor >= 0);
+      ALTER TABLE purchase_orders ADD COLUMN receipt_discrepancy_note TEXT NOT NULL DEFAULT '';
+      ALTER TABLE purchase_orders ADD COLUMN receipt_discrepancy_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(receipt_discrepancy_json));
+      UPDATE purchase_orders SET received_subtotal_minor = subtotal_minor WHERE status = 'received';
+
+      CREATE TABLE purchase_receipts (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        receipt_number TEXT NOT NULL,
+        supplier_invoice_number TEXT NOT NULL DEFAULT '',
+        discrepancy_note TEXT NOT NULL DEFAULT '',
+        total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+        received_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, receipt_number)
+      ) STRICT;
+      CREATE INDEX purchase_receipts_order_idx ON purchase_receipts(purchase_order_id, received_at DESC);
+
+      CREATE TABLE purchase_receipt_lines (
+        id TEXT PRIMARY KEY,
+        purchase_receipt_id TEXT NOT NULL REFERENCES purchase_receipts(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        purchase_order_line_id TEXT NOT NULL REFERENCES purchase_order_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_id TEXT NOT NULL REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        quantity_ordered_milli INTEGER NOT NULL CHECK (quantity_ordered_milli > 0),
+        quantity_previously_received_milli INTEGER NOT NULL CHECK (quantity_previously_received_milli >= 0),
+        quantity_received_milli INTEGER NOT NULL CHECK (quantity_received_milli >= 0),
+        quantity_short_milli INTEGER NOT NULL CHECK (quantity_short_milli >= 0),
+        unit_cost_minor INTEGER NOT NULL CHECK (unit_cost_minor >= 0),
+        line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0)
+      ) STRICT;
+      CREATE INDEX purchase_receipt_lines_batch_idx ON purchase_receipt_lines(purchase_receipt_id);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

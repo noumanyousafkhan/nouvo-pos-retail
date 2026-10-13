@@ -157,22 +157,71 @@ async function receiveOrder(order: PurchaseOrderSummary) {
     order.supplierInvoiceNumber,
   );
   if (supplierInvoiceNumber === null) return;
-  if (
-    !window.confirm(
-      `Receive all ${order.lineCount} line(s) from ${order.orderNumber}? This will increase stock and update weighted-average purchase cost.`,
-    )
-  )
-    return;
   busy.value = true;
   errorMessage.value = '';
   successMessage.value = '';
   try {
+    const receivingLines = await window.nouvo.listPurchaseOrderReceivingLines(order.id);
+    const lines: Array<{ purchaseOrderLineId: string; quantityReceivedMilli: number }> = [];
+    for (const line of receivingLines) {
+      if (line.remainingQuantityMilli <= 0) continue;
+      const answer = window.prompt(
+        `Quantity received for ${line.productName} (remaining ${(
+          line.remainingQuantityMilli / 1000
+        ).toFixed(3)}):`,
+        String(line.remainingQuantityMilli / 1000),
+      );
+      if (answer === null) return;
+      const quantity = Number(answer);
+      const quantityReceivedMilli = Math.round(quantity * 1000);
+      if (
+        !Number.isFinite(quantity) ||
+        quantity < 0 ||
+        Math.abs(quantity * 1000 - quantityReceivedMilli) > 0.0001 ||
+        quantityReceivedMilli > line.remainingQuantityMilli
+      ) {
+        throw new Error(
+          `Enter a valid quantity from 0 to ${(line.remainingQuantityMilli / 1000).toFixed(
+            3,
+          )} for ${line.productName}.`,
+        );
+      }
+      lines.push({ purchaseOrderLineId: line.purchaseOrderLineId, quantityReceivedMilli });
+    }
+    const hasRemainingGoods = receivingLines.some((line) => line.remainingQuantityMilli > 0);
+    if (!lines.some((line) => line.quantityReceivedMilli > 0) && hasRemainingGoods) {
+      throw new Error('At least one item must be received in a partial receipt.');
+    }
+    const finalizeOrder = hasRemainingGoods
+      ? window.confirm(
+          `Finalize ${order.orderNumber} now? Choose Cancel to save this as a partial receipt and receive the remaining goods later.`,
+        )
+      : true;
+    const hasShortage = receivingLines.some((line) => {
+      const received = lines.find((item) => item.purchaseOrderLineId === line.purchaseOrderLineId);
+      return (received?.quantityReceivedMilli ?? 0) < line.remainingQuantityMilli;
+    });
+    let discrepancyReason = '';
+    if (finalizeOrder && hasShortage) {
+      const reason = window.prompt(
+        'Some ordered goods are missing. Enter the discrepancy reason to close this order:',
+      );
+      if (reason === null) return;
+      discrepancyReason = reason.trim();
+      if (!discrepancyReason)
+        throw new Error('A discrepancy reason is required to finalize a short delivery.');
+    }
     const received = await window.nouvo.receivePurchaseOrder({
       id: order.id,
       supplierInvoiceNumber,
+      lines,
+      finalizeOrder,
+      discrepancyReason,
     });
     await refresh();
-    successMessage.value = `${received.orderNumber} received. Stock ledger and purchase costs updated.`;
+    successMessage.value = finalizeOrder
+      ? `${received.orderNumber} finalized. Received stock, actual received value, and any supplier discrepancy were recorded.`
+      : `${received.orderNumber} partial receipt saved. Stock updated; you can receive the remaining quantity later.`;
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Purchase order could not be received.';
@@ -810,7 +859,8 @@ onMounted(async () => {
     <p class="reports-disclaimer">
       Receiving uses moving weighted-average purchase cost. Supplier returns now reduce local stock
       atomically, retain audit/outbox history and post a balanced accounts-payable/inventory journal
-      when the return has value. Supplier payments and aging are still outstanding.
+      when the return has value. Supplier payments, aging, actual received-value balances, and
+      discrepancy records are linked to the purchase history.
     </p>
   </div>
 </template>

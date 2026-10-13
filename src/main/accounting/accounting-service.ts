@@ -188,7 +188,7 @@ export class AccountingService {
     if (prior) return prior;
     const order = this.database
       .prepare(
-        "SELECT id, order_number, subtotal_minor FROM purchase_orders WHERE id = ? AND store_id = ? AND status = 'received'",
+        "SELECT id, order_number, received_subtotal_minor AS subtotal_minor FROM purchase_orders WHERE id = ? AND store_id = ? AND status = 'received'",
       )
       .get(orderId, this.storeId) as
       { id: string; order_number: string; subtotal_minor: number } | undefined;
