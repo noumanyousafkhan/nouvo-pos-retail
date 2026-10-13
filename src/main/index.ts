@@ -16,7 +16,7 @@ import { registerAccountingIpcHandlers } from './ipc/register-accounting-handler
 import { registerSyncIpcHandlers } from './ipc/register-sync-handlers';
 import { SyncService } from './sync/sync-service';
 import { SyncWorker } from './sync/sync-worker';
-import { getLocalCounterId, getLocalDatabaseConnection } from './database';
+import { getLocalCounterId, getLocalDatabaseConnection, getLocalStoreId } from './database';
 
 let mainWindow: BrowserWindow | null = null;
 let syncWorker: SyncWorker | null = null;
@@ -81,7 +81,11 @@ app
     }
     registerAppIpcHandlers();
     if (getLocalDatabaseStatus() === 'ready') {
-      const syncService = new SyncService(getLocalDatabaseConnection(), getLocalCounterId());
+      const syncService = new SyncService(
+        getLocalDatabaseConnection(),
+        getLocalStoreId(),
+        getLocalCounterId(),
+      );
       syncWorker = new SyncWorker(syncService);
       syncWorker.start();
       registerSyncIpcHandlers(syncService, syncWorker);

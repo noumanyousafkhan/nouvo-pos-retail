@@ -10,7 +10,8 @@ export interface ClaimedEvent extends SyncEvent {
 export class SyncService {
   constructor(
     private readonly database: DatabaseSync,
-    private readonly counterId: string,
+    readonly storeId: string,
+    readonly counterId: string,
   ) {}
 
   initialize(configured: boolean): void {

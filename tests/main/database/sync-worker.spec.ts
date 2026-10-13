@@ -41,9 +41,13 @@ describe('sync worker HTTP delivery', () => {
       expect(request.headers.authorization).toBe('Bearer test-counter-token');
       const body = JSON.parse(raw) as {
         schemaVersion: number;
+        storeId: string;
+        counterId: string;
         events: Array<{ id: string; payload: { totalMinor: number } }>;
       };
       expect(body.schemaVersion).toBe(1);
+      expect(body.storeId).toBe(storeId);
+      expect(body.counterId).toBe(counterId);
       expect(body.events[0]).toMatchObject({ id: eventId, payload: { totalMinor: 2500 } });
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ acceptedEventIds: [eventId], rejectedEvents: [] }));
@@ -53,7 +57,7 @@ describe('sync worker HTTP delivery', () => {
     const address = server.address();
     if (!address || typeof address === 'string')
       throw new Error('Test server did not bind to a TCP port.');
-    const service = new SyncService(database.connection, counterId);
+    const service = new SyncService(database.connection, storeId, counterId);
     const worker = new SyncWorker(service, {
       NOUVO_SYNC_URL: 'http://127.0.0.1:' + address.port,
       NOUVO_SYNC_TOKEN: 'test-counter-token',

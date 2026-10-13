@@ -16,7 +16,7 @@ function setup() {
   database.connection
     .prepare('INSERT INTO counters (id, store_id, name) VALUES (?, ?, ?)')
     .run(counterId, storeId, 'Counter 1');
-  const service = new SyncService(database.connection, counterId);
+  const service = new SyncService(database.connection, storeId, counterId);
   return { database, service };
 }
 function insertEvent(database: ReturnType<typeof openLocalDatabase>) {

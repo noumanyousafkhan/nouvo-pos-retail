@@ -58,6 +58,8 @@ export class SyncWorker {
         headers: { 'content-type': 'application/json', authorization: `Bearer ${this.token}` },
         body: JSON.stringify({
           schemaVersion: 1,
+          storeId: this.service.storeId,
+          counterId: this.service.counterId,
           events: batch.map((event) => ({
             id: event.id,
             eventType: event.eventType,
