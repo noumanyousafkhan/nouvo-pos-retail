@@ -16,6 +16,7 @@ const channels = [
   'accounting:get-income-statement',
   'accounting:get-balance-sheet',
   'accounting:get-cash-movement-statement',
+  'accounting:get-indirect-cash-flow-statement',
   'accounting:post-manual-journal',
   'accounting:reverse-manual-journal',
 ] as const;
@@ -42,6 +43,11 @@ export function registerAccountingIpcHandlers(): void {
     const parsed = z.string().safeParse(input);
     if (!parsed.success) throw new Error('Balance sheet date is invalid.');
     return service().getBalanceSheet(parsed.data);
+  });
+  ipcMain.handle('accounting:get-indirect-cash-flow-statement', (_event, input: unknown) => {
+    const parsed = IncomeStatementRequestSchema.safeParse(input);
+    if (!parsed.success) throw new Error('Indirect cash flow statement date range is invalid.');
+    return service().getIndirectCashFlowStatement(parsed.data.startDate, parsed.data.endDate);
   });
   ipcMain.handle('accounting:get-cash-movement-statement', (_event, input: unknown) => {
     const parsed = IncomeStatementRequestSchema.safeParse(input);

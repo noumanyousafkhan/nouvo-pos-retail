@@ -67,6 +67,19 @@ export const CashMovementStatementSchema = z.object({
     }),
   ),
 });
+export const IndirectCashFlowStatementSchema = z.object({
+  startDate: z.string(),
+  endDate: z.string(),
+  currencyCode: z.string().length(3),
+  netIncomeMinor: z.number().int(),
+  inventoryChangeMinor: z.number().int(),
+  accountsPayableChangeMinor: z.number().int(),
+  salesTaxPayableChangeMinor: z.number().int(),
+  openingStockEquityChangeMinor: z.number().int(),
+  operatingCashFlowMinor: z.number().int(),
+  cashChangeMinor: z.number().int(),
+  reconciliationDifferenceMinor: z.number().int(),
+});
 export const ManualJournalLineSchema = z
   .object({
     accountId: z.string().uuid(),
@@ -120,6 +133,10 @@ export interface AccountingApi {
     endDate: string;
   }): Promise<IncomeStatement>;
   getAccountingBalanceSheet(asOfDate: string): Promise<z.infer<typeof BalanceSheetSchema>>;
+  getAccountingIndirectCashFlowStatement(input: {
+    startDate: string;
+    endDate: string;
+  }): Promise<z.infer<typeof IndirectCashFlowStatementSchema>>;
   getAccountingCashMovementStatement(input: {
     startDate: string;
     endDate: string;

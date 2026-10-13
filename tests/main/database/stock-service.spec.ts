@@ -113,4 +113,60 @@ describe('stock ledger service', () => {
       }),
     ).toThrow(/active product not found/i);
   });
+
+  it('posts balanced accounting entries for manual stock receipts and write-offs', () => {
+    const { database, productId, service, storeId } = setup();
+    service.record({
+      productId,
+      movementType: 'receipt',
+      quantityMilli: 2000,
+      unitCostMinor: 500,
+      reason: 'Manual intake',
+    });
+    service.record({
+      productId,
+      movementType: 'write_off',
+      quantityMilli: 1000,
+      unitCostMinor: 500,
+      reason: 'Damaged items',
+    });
+    const journals = database.connection
+      .prepare(
+        "SELECT je.source_id AS sourceId, SUM(jl.debit_minor) AS debit, SUM(jl.credit_minor) AS credit FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id WHERE je.store_id=? AND je.source_type='manual' GROUP BY je.id ORDER BY je.posted_at",
+      )
+      .all(storeId) as { sourceId: string; debit: number; credit: number }[];
+    expect(journals).toHaveLength(2);
+    expect(journals.every((journal) => journal.debit === journal.credit)).toBe(true);
+    const accounts = database.connection
+      .prepare(
+        "SELECT a.code, jl.debit_minor AS debit, jl.credit_minor AS credit FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.source_type='manual' ORDER BY je.posted_at, jl.line_number",
+      )
+      .all() as { code: string; debit: number; credit: number }[];
+    expect(accounts.map((row) => row.code)).toEqual(['1200', '3000', '5010', '1200']);
+  });
+
+  it('updates weighted-average unit cost when manual goods receipts arrive at a new cost', () => {
+    const { database, productId, service, storeId } = setup();
+    database.connection
+      .prepare('UPDATE products SET purchase_cost_minor=500 WHERE id=?')
+      .run(productId);
+    service.record({
+      productId,
+      movementType: 'receipt',
+      quantityMilli: 2000,
+      unitCostMinor: 500,
+      reason: 'First goods receipt',
+    });
+    service.record({
+      productId,
+      movementType: 'receipt',
+      quantityMilli: 2000,
+      unitCostMinor: 1000,
+      reason: 'Second goods receipt',
+    });
+    const product = database.connection
+      .prepare('SELECT purchase_cost_minor AS cost FROM products WHERE id=? AND store_id=?')
+      .get(productId, storeId) as { cost: number };
+    expect(product.cost).toBe(750);
+  });
 });

@@ -31,6 +31,16 @@ const cashMovement = ref<{
     netChangeMinor: number;
   }[];
 } | null>(null);
+const indirectCashFlow = ref<{
+  netIncomeMinor: number;
+  inventoryChangeMinor: number;
+  accountsPayableChangeMinor: number;
+  salesTaxPayableChangeMinor: number;
+  openingStockEquityChangeMinor: number;
+  operatingCashFlowMinor: number;
+  cashChangeMinor: number;
+  reconciliationDifferenceMinor: number;
+} | null>(null);
 const today = new Date().toISOString().slice(0, 10);
 const asOfDate = ref(today);
 const periodEnd = ref(today);
@@ -74,28 +84,41 @@ async function refresh() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [accountRows, journalRows, settings, balanceRows, incomeRows, sheet, cashRows] =
-      await Promise.all([
-        window.nouvo.listAccountingAccounts(),
-        window.nouvo.listAccountingJournals(),
-        window.nouvo.getBusinessSettings(),
-        window.nouvo.getAccountingTrialBalance(asOfDate.value),
-        window.nouvo.getAccountingIncomeStatement({
-          startDate: periodStart.value,
-          endDate: periodEnd.value,
-        }),
-        window.nouvo.getAccountingBalanceSheet(asOfDate.value),
-        window.nouvo.getAccountingCashMovementStatement({
-          startDate: periodStart.value,
-          endDate: periodEnd.value,
-        }),
-      ]);
+    const [
+      accountRows,
+      journalRows,
+      settings,
+      balanceRows,
+      incomeRows,
+      sheet,
+      cashRows,
+      indirectRows,
+    ] = await Promise.all([
+      window.nouvo.listAccountingAccounts(),
+      window.nouvo.listAccountingJournals(),
+      window.nouvo.getBusinessSettings(),
+      window.nouvo.getAccountingTrialBalance(asOfDate.value),
+      window.nouvo.getAccountingIncomeStatement({
+        startDate: periodStart.value,
+        endDate: periodEnd.value,
+      }),
+      window.nouvo.getAccountingBalanceSheet(asOfDate.value),
+      window.nouvo.getAccountingCashMovementStatement({
+        startDate: periodStart.value,
+        endDate: periodEnd.value,
+      }),
+      window.nouvo.getAccountingIndirectCashFlowStatement({
+        startDate: periodStart.value,
+        endDate: periodEnd.value,
+      }),
+    ]);
     accounts.value = accountRows;
     journals.value = journalRows;
     trialBalance.value = balanceRows;
     incomeStatement.value = incomeRows;
     balanceSheet.value = sheet;
     cashMovement.value = cashRows;
+    indirectCashFlow.value = indirectRows;
     currencyCode.value = (settings as BusinessSettings).currencyCode;
   } catch (error) {
     errorMessage.value =
@@ -336,6 +359,71 @@ onMounted(async () => {
           </table>
         </div>
         <div v-else class="reports-empty">No cash or clearing movements in this period.</div>
+      </BaseCard>
+      <BaseCard class="accounting-panel">
+        <header class="accounting-panel-heading">
+          <div>
+            <h2>Indirect cash-flow reconciliation</h2>
+            <p>
+              Net income adjusted for inventory, supplier payables, sales tax payable and non-cash
+              opening-stock entries. The difference should be zero when cash-affecting entries are
+              classified in the ledger.
+            </p>
+          </div>
+          <span class="cash-session-count"
+            >Operating {{ money(indirectCashFlow?.operatingCashFlowMinor ?? 0) }}</span
+          >
+        </header>
+        <div class="reports-table-wrap">
+          <table class="inventory-table">
+            <tbody>
+              <tr>
+                <td>Net income</td>
+                <td class="reports-number">{{ money(indirectCashFlow?.netIncomeMinor ?? 0) }}</td>
+              </tr>
+              <tr>
+                <td>Less / (add) change in inventory</td>
+                <td class="reports-number">
+                  {{ money(-(indirectCashFlow?.inventoryChangeMinor ?? 0)) }}
+                </td>
+              </tr>
+              <tr>
+                <td>Change in accounts payable</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.accountsPayableChangeMinor ?? 0) }}
+                </td>
+              </tr>
+              <tr>
+                <td>Change in sales tax payable</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.salesTaxPayableChangeMinor ?? 0) }}
+                </td>
+              </tr>
+              <tr>
+                <td>Non-cash opening-stock/equity adjustment</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.openingStockEquityChangeMinor ?? 0) }}
+                </td>
+              </tr>
+              <tr>
+                <th>Net operating cash flow</th>
+                <th class="reports-number">
+                  {{ money(indirectCashFlow?.operatingCashFlowMinor ?? 0) }}
+                </th>
+              </tr>
+              <tr>
+                <td>Actual cash / clearing account change</td>
+                <td class="reports-number">{{ money(indirectCashFlow?.cashChangeMinor ?? 0) }}</td>
+              </tr>
+              <tr>
+                <td>Reconciliation difference</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.reconciliationDifferenceMinor ?? 0) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </BaseCard>
       <BaseCard class="accounting-panel">
         <header class="accounting-panel-heading">

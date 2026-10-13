@@ -31,13 +31,11 @@ function setup() {
       'INSERT INTO products (id, store_id, sku, name, base_unit, purchase_cost_minor, selling_price_minor, tax_rate_basis_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     )
     .run(productId, storeId, 'LEDGER-1', 'Ledger Item', 'piece', 500, 1000, 1000);
-  new StockService(database.connection, storeId, counterId).record({
-    productId,
-    movementType: 'receipt',
-    quantityMilli: 5000,
-    unitCostMinor: 500,
-    reason: 'Opening inventory',
-  });
+  database.connection
+    .prepare(
+      "INSERT INTO stock_movements (id,store_id,counter_id,product_id,movement_type,quantity_delta_milli,unit_cost_minor,reference_type,reference_id,reason) VALUES (?,?,?,?,'opening',5000,500,'test_seed',?,'Opening inventory')",
+    )
+    .run(randomUUID(), storeId, counterId, productId, randomUUID());
   return { database, storeId, counterId, productId, userId };
 }
 afterEach(() => {
@@ -72,7 +70,7 @@ describe('double-entry accounting postings', () => {
       database.connection
         .prepare('SELECT COUNT(*) AS count FROM accounts WHERE store_id = ?')
         .get(storeId),
-    ).toEqual({ count: 12 });
+    ).toEqual({ count: 15 });
     expect(new AccountingService(database.connection, storeId).postSale(sale.id)).toBeTypeOf(
       'string',
     );
@@ -244,5 +242,25 @@ describe('double-entry accounting postings', () => {
     const entries = new AccountingService(database.connection, storeId).listRecentJournals();
     expect(entries).toHaveLength(2);
     expect(entries.every((entry) => entry.debitMinor === entry.creditMinor)).toBe(true);
+  });
+
+  it('reconciles indirect operating cash flow to actual cash movement for a taxable sale', () => {
+    const { database, storeId, counterId, productId } = setup();
+    new CheckoutService(database.connection, storeId, counterId).complete({
+      idempotencyKey: randomUUID(),
+      items: [{ productId, quantityMilli: 2000 }],
+      paymentLines: [{ paymentMethod: 'cash', amountMinor: 2200 }],
+    });
+    const today = new Date().toISOString().slice(0, 10);
+    const statement = new AccountingService(
+      database.connection,
+      storeId,
+    ).getIndirectCashFlowStatement(today, today);
+    expect(statement.netIncomeMinor).toBe(1000);
+    expect(statement.inventoryChangeMinor).toBe(-1000);
+    expect(statement.salesTaxPayableChangeMinor).toBe(200);
+    expect(statement.operatingCashFlowMinor).toBe(2200);
+    expect(statement.cashChangeMinor).toBe(2200);
+    expect(statement.reconciliationDifferenceMinor).toBe(0);
   });
 });

@@ -6,6 +6,7 @@ import {
   type StockSummary,
 } from '../../shared/contracts/stock';
 import { runInTransaction } from '../database/connection';
+import { AccountingService } from '../accounting/accounting-service';
 
 export class StockService {
   constructor(
@@ -25,8 +26,11 @@ export class StockService {
 
     return runInTransaction(this.database, () => {
       const product = this.database
-        .prepare('SELECT id, is_active FROM products WHERE id = ? AND store_id = ?')
-        .get(input.productId, this.storeId) as { id: string; is_active: number } | undefined;
+        .prepare(
+          'SELECT id, is_active, purchase_cost_minor FROM products WHERE id = ? AND store_id = ?',
+        )
+        .get(input.productId, this.storeId) as
+        { id: string; is_active: number; purchase_cost_minor: number } | undefined;
       if (!product || product.is_active !== 1)
         throw new Error('Active product not found. Refresh inventory and try again.');
 
@@ -36,6 +40,18 @@ export class StockService {
         )
         .get(input.productId, this.counterId) as { quantity: number };
       const nextQuantity = current.quantity + delta;
+      const effectiveUnitCost = input.unitCostMinor ?? product.purchase_cost_minor;
+      if (input.movementType === 'receipt' && nextQuantity > 0) {
+        const weightedAverageCost = Math.round(
+          (current.quantity * product.purchase_cost_minor + delta * effectiveUnitCost) /
+            nextQuantity,
+        );
+        this.database
+          .prepare(
+            'UPDATE products SET purchase_cost_minor=?, updated_at=? WHERE id=? AND store_id=?',
+          )
+          .run(weightedAverageCost, new Date().toISOString(), input.productId, this.storeId);
+      }
       if (nextQuantity < 0)
         throw new Error(
           'This stock movement would make counter stock negative. Check the quantity and try again.',
@@ -53,10 +69,11 @@ export class StockService {
           input.productId,
           input.movementType,
           delta,
-          input.unitCostMinor ?? null,
+          effectiveUnitCost,
           movementId,
           input.reason,
         );
+      new AccountingService(this.database, this.storeId).postStockMovement(movementId);
       this.database
         .prepare(
           `INSERT INTO audit_events (id, store_id, action, entity_type, entity_id, before_json, after_json, reason) VALUES (?, ?, ?, 'stock', ?, ?, ?, ?)`,
@@ -85,7 +102,7 @@ export class StockService {
             productId: input.productId,
             movementType: input.movementType,
             quantityDeltaMilli: delta,
-            unitCostMinor: input.unitCostMinor ?? null,
+            unitCostMinor: effectiveUnitCost,
             reason: input.reason,
           }),
         );

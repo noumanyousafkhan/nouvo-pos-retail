@@ -17,7 +17,10 @@ type AccountCode =
   | '2100'
   | '4000'
   | '4050'
-  | '5000';
+  | '3000'
+  | '4090'
+  | '5000'
+  | '5010';
 type JournalLineInput = {
   accountCode: AccountCode;
   debitMinor?: number;
@@ -38,10 +41,13 @@ const DEFAULT_ACCOUNTS: {
   { code: '1019', name: 'Other Payment Clearing', type: 'asset', normal: 'debit' },
   { code: '1200', name: 'Inventory', type: 'asset', normal: 'debit' },
   { code: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+  { code: '3000', name: 'Opening Stock / Capital Adjustment', type: 'equity', normal: 'credit' },
   { code: '2100', name: 'Sales Tax Payable', type: 'liability', normal: 'credit' },
   { code: '4000', name: 'Sales Revenue', type: 'income', normal: 'credit' },
+  { code: '4090', name: 'Stock Adjustment Gain', type: 'income', normal: 'credit' },
   { code: '4050', name: 'Sales Returns and Allowances', type: 'income', normal: 'debit' },
   { code: '5000', name: 'Cost of Goods Sold', type: 'expense', normal: 'debit' },
+  { code: '5010', name: 'Inventory Shrinkage and Write-off', type: 'expense', normal: 'debit' },
 ];
 
 export class AccountingService {
@@ -64,6 +70,73 @@ export class AccountingService {
         account.type,
         account.normal,
       );
+  }
+
+  postStockMovement(movementId: string): string | null {
+    this.ensureChartOfAccounts();
+    const prior = this.findExisting('manual', movementId);
+    if (prior) return prior;
+    const movement = this.database
+      .prepare(
+        "SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity_delta_milli, sm.unit_cost_minor, sm.reason, p.name AS product_name, p.purchase_cost_minor, s.currency_code FROM stock_movements sm JOIN products p ON p.id=sm.product_id JOIN stores s ON s.id=sm.store_id WHERE sm.id=? AND sm.store_id=? AND sm.reference_type='manual_stock_entry'",
+      )
+      .get(movementId, this.storeId) as
+      | {
+          id: string;
+          product_id: string;
+          movement_type: string;
+          quantity_delta_milli: number;
+          unit_cost_minor: number | null;
+          reason: string | null;
+          product_name: string;
+          purchase_cost_minor: number;
+          currency_code: string;
+        }
+      | undefined;
+    if (!movement) throw new Error('Cannot post stock accounting: stock movement was not found.');
+    const unitCost = movement.unit_cost_minor ?? movement.purchase_cost_minor;
+    const valueMinor = Math.round((Math.abs(movement.quantity_delta_milli) * unitCost) / 1000);
+    if (valueMinor <= 0) return null;
+    const lines: JournalLineInput[] =
+      movement.quantity_delta_milli > 0
+        ? [
+            {
+              accountCode: '1200',
+              debitMinor: valueMinor,
+              memo: 'Stock increase: ' + movement.product_name,
+            },
+            {
+              accountCode: movement.movement_type === 'adjustment' ? '4090' : '3000',
+              creditMinor: valueMinor,
+              memo: movement.reason ?? 'Stock increase offset',
+            },
+          ]
+        : [
+            {
+              accountCode: '5010',
+              debitMinor: valueMinor,
+              memo: 'Stock reduction: ' + movement.product_name,
+            },
+            {
+              accountCode: '1200',
+              creditMinor: valueMinor,
+              memo: movement.reason ?? 'Inventory reduction',
+            },
+          ];
+    return this.postBalanced({
+      sourceType: 'manual',
+      sourceId: movementId,
+      currencyCode: movement.currency_code,
+      description: (
+        'Stock ' +
+        movement.movement_type +
+        ': ' +
+        movement.product_name +
+        ' — ' +
+        (movement.reason ?? '')
+      ).slice(0, 200),
+      lines,
+    });
   }
 
   postSale(saleId: string): string {
@@ -527,6 +600,51 @@ export class AccountingService {
     };
   }
 
+  getIndirectCashFlowStatement(startDate: string, endDate: string) {
+    this.ensureChartOfAccounts();
+    if (!this.isValidDate(startDate) || !this.isValidDate(endDate) || startDate > endDate)
+      throw new Error(
+        'Cash flow statement requires valid dates with start date on or before end date.',
+      );
+    const previousDate = new Date(startDate + 'T00:00:00Z');
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+    const openingDate = previousDate.toISOString().slice(0, 10);
+    const balanceAt = (code: string, asOfDate: string): number => {
+      const row = this.database
+        .prepare(
+          'SELECT COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.debit_minor ELSE 0 END),0) AS debits, COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.credit_minor ELSE 0 END),0) AS credits FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id=a.id LEFT JOIN journal_entries je ON je.id=jl.journal_entry_id AND je.store_id=a.store_id AND substr(je.posted_at,1,10)<=? WHERE a.store_id=? AND a.code=?',
+        )
+        .get(asOfDate, this.storeId, code) as { debits: number; credits: number };
+      return row.debits - row.credits;
+    };
+    const inventoryChangeMinor = balanceAt('1200', endDate) - balanceAt('1200', openingDate);
+    const accountsPayableChangeMinor = balanceAt('2000', openingDate) - balanceAt('2000', endDate);
+    const salesTaxPayableChangeMinor = balanceAt('2100', openingDate) - balanceAt('2100', endDate);
+    const openingStockEquityChangeMinor =
+      balanceAt('3000', openingDate) - balanceAt('3000', endDate);
+    const income = this.getIncomeStatement(startDate, endDate);
+    const operatingCashFlowMinor =
+      income.netIncomeMinor -
+      inventoryChangeMinor +
+      accountsPayableChangeMinor +
+      salesTaxPayableChangeMinor +
+      openingStockEquityChangeMinor;
+    const cashMovement = this.getCashMovementStatement(startDate, endDate);
+    return {
+      startDate,
+      endDate,
+      currencyCode: income.currencyCode,
+      netIncomeMinor: income.netIncomeMinor,
+      inventoryChangeMinor,
+      accountsPayableChangeMinor,
+      salesTaxPayableChangeMinor,
+      openingStockEquityChangeMinor,
+      operatingCashFlowMinor,
+      cashChangeMinor: cashMovement.netChangeMinor,
+      reconciliationDifferenceMinor: cashMovement.netChangeMinor - operatingCashFlowMinor,
+    };
+  }
+
   postManualJournal(input: ManualJournalInput): string {
     this.ensureChartOfAccounts();
     if (input.lines.length < 2 || input.lines.length > 50)
@@ -739,7 +857,12 @@ export class AccountingService {
 
   private postBalanced(input: {
     sourceType:
-      'sale' | 'sale_return' | 'purchase_receipt' | 'purchase_return' | 'supplier_payment';
+      | 'sale'
+      | 'sale_return'
+      | 'purchase_receipt'
+      | 'purchase_return'
+      | 'supplier_payment'
+      | 'manual';
     sourceId: string;
     currencyCode: string;
     description: string;

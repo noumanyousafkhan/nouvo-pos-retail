@@ -129,7 +129,7 @@ onMounted(loadReport);
         <BaseCard
           ><span class="reports-kpi-label">Estimated stock cost</span
           ><strong>{{ money(report.inventory.estimatedCostValueMinor) }}</strong
-          ><small>Current purchase cost × on-hand</small></BaseCard
+          ><small>Weighted-average unit cost × on-hand (estimate)</small></BaseCard
         >
       </section>
       <BaseCard class="reports-table-card reports-cashier-card">
