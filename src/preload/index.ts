@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { NouvoApi } from '../shared/contracts/app';
 import type { ProductInput, ProductListQuery } from '../shared/contracts/products';
+import type { StockMovementInput } from '../shared/contracts/stock';
 
 const api: NouvoApi = Object.freeze({
   getAppInfo: () => ipcRenderer.invoke('app:get-info', {}),
@@ -10,6 +11,8 @@ const api: NouvoApi = Object.freeze({
   saveProduct: (input: ProductInput) => ipcRenderer.invoke('inventory:save-product', input),
   archiveProduct: (id: string, reason?: string) =>
     ipcRenderer.invoke('inventory:archive-product', { id, reason }),
+  recordStockMovement: (input: StockMovementInput) =>
+    ipcRenderer.invoke('inventory:record-stock-movement', input),
 });
 
 contextBridge.exposeInMainWorld('nouvo', api);

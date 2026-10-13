@@ -16,8 +16,9 @@ export class ProductService {
   constructor(
     private readonly database: DatabaseSync,
     private readonly storeId: string,
+    counterId: string,
   ) {
-    this.repository = new ProductRepository(database);
+    this.repository = new ProductRepository(database, counterId);
   }
 
   list(rawQuery: unknown = {}): Product[] {
@@ -79,6 +80,16 @@ export class ProductService {
             before ? JSON.stringify(before) : null,
             JSON.stringify(after),
           );
+        this.database
+          .prepare(
+            `INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, 'product', ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            before ? 'product.updated' : 'product.created',
+            after.id,
+            JSON.stringify({ schemaVersion: 1, product: after }),
+          );
         return after;
       });
     } catch (error) {
@@ -118,6 +129,15 @@ export class ProductService {
           JSON.stringify(before),
           JSON.stringify({ ...before, isActive: false }),
           safeReason || null,
+        );
+      this.database
+        .prepare(
+          `INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'product.archived', 'product', ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          id,
+          JSON.stringify({ schemaVersion: 1, productId: id, archivedAt: new Date().toISOString() }),
         );
     });
   }

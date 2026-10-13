@@ -69,6 +69,8 @@
 - [x] Product changes and archive actions create audit events with before/after snapshots.
 - [x] Products are archived rather than hard-deleted.
 - [x] Base-unit changes blocked after stock movement or sale history exists.
+- [x] Counter on-hand balance derived from stock movement ledger; stock receipt, adjustment and write-off are separate movement types.
+- [x] Negative on-hand stock blocked; movement reason, audit event and outbox event commit atomically.
 - [x] Transactional service tests cover create, update, archive, duplicate identifiers, audit history and rollback.
 - [x] Electron UI smoke test created a product via preload IPC and verified that it remained visible after app restart.
 - [ ] Role-based authorization is not yet implemented; do not use this build for production operations.
@@ -80,4 +82,4 @@
 
 ## Current status
 
-Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 18 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product-create UI and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, stock receiving/adjustments, checkout, payments, central synchronization, accounting, full branding setup, receipt printing, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing.
+Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 21 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product/stock UI smoke tests and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, checkout, payments, central synchronization, accounting, full branding setup, receipt printing, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing.

@@ -1136,3 +1136,33 @@ a:focus-visible {
     transition: none;
   }
 }
+.inventory-stock-quantity {
+  color: #273149;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.inventory-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #e4e7f0;
+  border-radius: 9px;
+  outline: none;
+  color: #293248;
+  background: #fcfcff;
+  font-size: 11px;
+  font-weight: 500;
+}
+.inventory-field select:focus {
+  border-color: #958ff0;
+  box-shadow: 0 0 0 3px rgb(99 91 218 / 10%);
+}
+.inventory-stock-note {
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  color: #747e94;
+  background: #f7f8fc;
+  font-size: 10px;
+  line-height: 1.7;
+}

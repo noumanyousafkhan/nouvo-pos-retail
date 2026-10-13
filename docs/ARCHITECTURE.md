@@ -8,7 +8,7 @@
 - `src/shared`: schemas and types shared across trusted process boundaries.
 - `src/server`: reserved for the central Node.js/PostgreSQL service; not yet implemented.
 - `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle.
-- `src/main/inventory`: product repository and domain service; product edits use transactions and audit snapshots.
+- `src/main/inventory`: product repository/service and stock-ledger service; product and stock mutations use transactions, audit snapshots and durable outbox events.
 - `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
 
@@ -29,6 +29,7 @@
 - `src/main/inventory/product-repository.ts` owns SQL queries; `product-service.ts` owns validation-adjacent business rules, transaction boundaries and audit events.
 - `src/renderer/src/views/InventoryView.vue` owns the catalogue UI only; it calls the typed preload bridge and never queries SQLite directly.
 - Product creation/editing preserves transaction history. Archiving deactivates the row rather than deleting it. SKU and barcode conflicts return actionable errors.
+- Stock receipts, adjustments and write-offs are ledger entries, never direct quantity edits. Negative on-hand stock is blocked. Stock changes are audited and written to the sync outbox in the same transaction.
 - Base-unit changes are blocked after stock movements or sale lines exist; a dedicated controlled conversion workflow is required.
 
 ## Local persistence

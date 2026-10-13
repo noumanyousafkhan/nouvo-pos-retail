@@ -4,15 +4,18 @@ import {
   ProductListQuerySchema,
   ProductInputSchema,
 } from '../../shared/contracts/products';
-import { getLocalDatabaseConnection, getLocalStoreId } from '../database';
+import { getLocalCounterId, getLocalDatabaseConnection, getLocalStoreId } from '../database';
+import { StockMovementInputSchema } from '../../shared/contracts/stock';
+import { StockService } from '../inventory/stock-service';
 import { ProductService } from '../inventory/product-service';
 
 const listProductsChannel = 'inventory:list-products';
 const saveProductChannel = 'inventory:save-product';
 const archiveProductChannel = 'inventory:archive-product';
+const recordStockMovementChannel = 'inventory:record-stock-movement';
 
 function productService(): ProductService {
-  return new ProductService(getLocalDatabaseConnection(), getLocalStoreId());
+  return new ProductService(getLocalDatabaseConnection(), getLocalStoreId(), getLocalCounterId());
 }
 
 export function registerInventoryIpcHandlers(): void {
@@ -26,6 +29,16 @@ export function registerInventoryIpcHandlers(): void {
   ipcMain.handle(saveProductChannel, (_event, rawInput: unknown) => {
     const input = ProductInputSchema.parse(rawInput);
     return productService().save(input);
+  });
+
+  ipcMain.removeHandler(recordStockMovementChannel);
+  ipcMain.handle(recordStockMovementChannel, (_event, rawInput: unknown) => {
+    const input = StockMovementInputSchema.parse(rawInput);
+    return new StockService(
+      getLocalDatabaseConnection(),
+      getLocalStoreId(),
+      getLocalCounterId(),
+    ).record(input);
   });
 
   ipcMain.removeHandler(archiveProductChannel);

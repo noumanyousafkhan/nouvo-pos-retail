@@ -11,6 +11,12 @@ const loading = ref(false);
 const saving = ref(false);
 const showArchived = ref(false);
 const editorOpen = ref(false);
+const stockEditorOpen = ref(false);
+const stockProduct = ref<Product | null>(null);
+const stockMovementType = ref<'receipt' | 'adjustment' | 'write_off'>('receipt');
+const stockQuantity = ref('1');
+const stockUnitCost = ref('0.00');
+const stockReason = ref('Initial stock received');
 const editingId = ref<string | null>(null);
 const errorMessage = ref('');
 const successMessage = ref('');
@@ -135,6 +141,51 @@ async function saveProduct() {
   }
 }
 
+function openStockEditor(product: Product) {
+  stockProduct.value = product;
+  stockMovementType.value = 'receipt';
+  stockQuantity.value = '1';
+  stockUnitCost.value = (product.purchaseCostMinor / 100).toFixed(2);
+  stockReason.value = '';
+  errorMessage.value = '';
+  stockEditorOpen.value = true;
+}
+
+async function saveStockMovement() {
+  if (!stockProduct.value) return;
+  saving.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+  try {
+    const quantity = Number(stockQuantity.value);
+    if (!Number.isFinite(quantity) || quantity === 0 || Math.abs(quantity) > 9_000_000) {
+      throw new Error('Enter a non-zero quantity with at most three decimal places.');
+    }
+    const quantityMilli = Math.round(quantity * 1000);
+    if (quantityMilli === 0) throw new Error('Quantity must be at least 0.001.');
+    if (Math.abs(quantityMilli / 1000 - quantity) > 0.0000001) {
+      throw new Error('Quantity supports up to three decimal places.');
+    }
+    const unitCostMinor =
+      stockMovementType.value === 'receipt' ? toMinor(stockUnitCost.value) : undefined;
+    const result = await window.nouvo.recordStockMovement({
+      productId: stockProduct.value.id,
+      movementType: stockMovementType.value,
+      quantityMilli,
+      ...(unitCostMinor !== undefined ? { unitCostMinor } : {}),
+      reason: stockReason.value,
+    });
+    stockEditorOpen.value = false;
+    successMessage.value = `Stock saved. New on-hand: ${(result.quantityMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${stockProduct.value.baseUnit}.`;
+    await loadProducts();
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Stock movement could not be saved.';
+  } finally {
+    saving.value = false;
+  }
+}
+
 async function archiveProduct(product: Product) {
   if (!window.confirm(`Archive “${product.name}”? It will remain in historical records.`)) return;
   errorMessage.value = '';
@@ -254,6 +305,14 @@ onMounted(loadProducts);
                 ><small class="inventory-barcode">{{ product.barcodes[0] || 'No barcode' }}</small>
               </td>
               <td>{{ product.categoryName || 'Uncategorized' }}</td>
+              <td>
+                <span class="inventory-stock-quantity">{{
+                  (product.stockOnHandMilli / 1000).toLocaleString('en-PK', {
+                    maximumFractionDigits: 3,
+                  })
+                }}</span>
+                <small>{{ product.baseUnit }}</small>
+              </td>
               <td>{{ formatMoney(product.purchaseCostMinor) }}</td>
               <td class="inventory-price">{{ formatMoney(product.sellingPriceMinor) }}</td>
               <td>
@@ -267,6 +326,14 @@ onMounted(loadProducts);
               </td>
               <td>
                 <div class="inventory-row-actions">
+                  <button
+                    v-if="product.isActive"
+                    class="inventory-text-action"
+                    type="button"
+                    @click="openStockEditor(product)"
+                  >
+                    Stock
+                  </button>
                   <button
                     class="inventory-text-action"
                     type="button"
@@ -386,6 +453,93 @@ onMounted(loadProducts);
             ><BaseButton type="submit" :loading="saving">
               {{ editingId ? 'Save changes' : 'Create product' }}
             </BaseButton>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div
+      v-if="stockEditorOpen && stockProduct"
+      class="inventory-modal-backdrop"
+      @click.self="stockEditorOpen = false"
+    >
+      <section
+        class="inventory-modal inventory-stock-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stock-editor-title"
+      >
+        <header class="inventory-modal-header">
+          <div>
+            <span class="page-eyebrow">STOCK LEDGER</span>
+            <h2 id="stock-editor-title">Update stock</h2>
+            <p>
+              {{ stockProduct.name }} · Current on-hand:
+              {{
+                (stockProduct.stockOnHandMilli / 1000).toLocaleString('en-PK', {
+                  maximumFractionDigits: 3,
+                })
+              }}
+              {{ stockProduct.baseUnit }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="inventory-modal-close"
+            aria-label="Close stock editor"
+            @click="stockEditorOpen = false"
+          >
+            ×
+          </button>
+        </header>
+        <form class="inventory-form" @submit.prevent="saveStockMovement">
+          <div v-if="errorMessage" class="inventory-alert inventory-alert--error" role="alert">
+            {{ errorMessage }}
+          </div>
+          <label class="inventory-field"
+            >Movement type <span>*</span
+            ><select v-model="stockMovementType">
+              <option value="receipt">Receive stock</option>
+              <option value="adjustment">Stock adjustment</option>
+              <option value="write_off">Write-off / damaged</option>
+            </select></label
+          >
+          <label class="inventory-field"
+            >{{ stockMovementType === 'adjustment' ? 'Quantity change (+/-)' : 'Quantity' }}
+            <span>*</span
+            ><input
+              v-model="stockQuantity"
+              type="number"
+              :min="stockMovementType === 'adjustment' ? undefined : '0.001'"
+              :step="0.001"
+              required
+          /></label>
+          <label v-if="stockMovementType === 'receipt'" class="inventory-field"
+            >Unit purchase cost (PKR)<input
+              v-model="stockUnitCost"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+          /></label>
+          <label class="inventory-field"
+            >Reason / reference <span>*</span
+            ><textarea
+              v-model="stockReason"
+              rows="2"
+              minlength="3"
+              maxlength="500"
+              required
+              placeholder="Supplier delivery, stock count correction, damage…"
+            />
+          </label>
+          <p class="inventory-stock-note">
+            Every movement is recorded in the stock ledger and audit log. Negative on-hand stock is
+            blocked. Adjustments require a reason.
+          </p>
+          <footer class="inventory-modal-footer">
+            <BaseButton variant="secondary" @click="stockEditorOpen = false">Cancel</BaseButton
+            ><BaseButton type="submit" :loading="saving">Save stock movement</BaseButton>
           </footer>
         </form>
       </section>

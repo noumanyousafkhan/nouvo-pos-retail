@@ -55,6 +55,17 @@ export function getLocalStoreId(): string {
   return store.id;
 }
 
+export function getLocalCounterId(): string {
+  const counter = getLocalDatabaseConnection()
+    .prepare('SELECT id FROM counters ORDER BY created_at LIMIT 1')
+    .get() as { id: string } | undefined;
+  if (!counter)
+    throw new Error(
+      'Local counter setup is missing. Reopen the application to initialize the counter.',
+    );
+  return counter.id;
+}
+
 export function getLocalDatabaseStatus(): 'ready' | 'error' | 'not-configured' {
   if (localDatabase) return 'ready';
   return initializationError ? 'error' : 'not-configured';

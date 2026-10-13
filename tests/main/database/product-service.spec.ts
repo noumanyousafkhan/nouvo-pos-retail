@@ -9,10 +9,19 @@ function setup() {
   const database = openLocalDatabase(':memory:');
   opened.push(database);
   const storeId = randomUUID();
+  const counterId = randomUUID();
   database.connection
     .prepare('INSERT INTO stores (id, name) VALUES (?, ?)')
     .run(storeId, 'Test Store');
-  return { database, storeId, service: new ProductService(database.connection, storeId) };
+  database.connection
+    .prepare('INSERT INTO counters (id, store_id, name) VALUES (?, ?, ?)')
+    .run(counterId, storeId, 'Test Counter');
+  return {
+    database,
+    storeId,
+    counterId,
+    service: new ProductService(database.connection, storeId, counterId),
+  };
 }
 
 afterEach(() => {
@@ -34,7 +43,13 @@ describe('product service', () => {
     });
     expect(product.name).toBe('Basmati Rice');
     expect(product.barcodes).toEqual(['1234567890']);
+    expect(product.stockOnHandMilli).toBe(0);
     expect(service.list({ search: 'RICE-01' })).toHaveLength(1);
+    expect(
+      database.connection
+        .prepare('SELECT COUNT(*) AS count FROM outbox_events WHERE aggregate_id = ?')
+        .get(product.id).count,
+    ).toBe(1);
     expect(
       database.connection
         .prepare('SELECT action FROM audit_events WHERE entity_id = ?')
