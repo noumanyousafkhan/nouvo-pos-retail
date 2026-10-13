@@ -483,6 +483,23 @@ export const migrations: Migration[] = [
       CREATE INDEX journal_lines_account_idx ON journal_lines(account_id, journal_entry_id);
     `,
   },
+  {
+    version: 9,
+    name: 'sync_status_and_outbox_diagnostics',
+    sql: `
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','sync.view'),('owner','sync.retry'),('manager','sync.view'),('manager','sync.retry');
+
+      CREATE TABLE sync_state (
+        counter_id TEXT PRIMARY KEY REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        status TEXT NOT NULL DEFAULT 'not_configured' CHECK (status IN ('not_configured','idle','syncing','connected','offline','error')),
+        last_attempt_at TEXT,
+        last_success_at TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

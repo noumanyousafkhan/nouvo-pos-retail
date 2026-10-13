@@ -5,7 +5,10 @@ import { getLocalDatabaseStatus } from '../database';
 const appInfoChannel = 'app:get-info';
 const runtimeStatusChannel = 'app:get-runtime-status';
 
-export function registerAppIpcHandlers(): void {
+export function registerAppIpcHandlers(
+  getSynchronizationStatus: () => 'not-configured' | 'connected' | 'offline' | 'error' = () =>
+    'not-configured',
+): void {
   ipcMain.removeHandler(appInfoChannel);
   ipcMain.handle(appInfoChannel, (_event, rawPayload: unknown) => {
     EmptyPayloadSchema.parse(rawPayload ?? {});
@@ -23,7 +26,7 @@ export function registerAppIpcHandlers(): void {
     return RuntimeStatusSchema.parse({
       application: 'ready',
       localDatabase: getLocalDatabaseStatus(),
-      synchronization: 'not-configured',
+      synchronization: getSynchronizationStatus(),
     });
   });
 }

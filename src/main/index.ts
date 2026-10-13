@@ -13,8 +13,13 @@ import { registerReportsIpcHandlers } from './ipc/register-reports-handlers';
 import { registerPurchasingIpcHandlers } from './ipc/register-purchasing-handlers';
 import { registerCashSessionIpcHandlers } from './ipc/register-cash-session-handlers';
 import { registerAccountingIpcHandlers } from './ipc/register-accounting-handlers';
+import { registerSyncIpcHandlers } from './ipc/register-sync-handlers';
+import { SyncService } from './sync/sync-service';
+import { SyncWorker } from './sync/sync-worker';
+import { getLocalCounterId, getLocalDatabaseConnection } from './database';
 
 let mainWindow: BrowserWindow | null = null;
+let syncWorker: SyncWorker | null = null;
 
 function configureContentSecurityPolicy(): void {
   const developmentConnectSources = process.env.ELECTRON_RENDERER_URL
@@ -76,6 +81,22 @@ app
     }
     registerAppIpcHandlers();
     if (getLocalDatabaseStatus() === 'ready') {
+      const syncService = new SyncService(getLocalDatabaseConnection(), getLocalCounterId());
+      syncWorker = new SyncWorker(syncService);
+      syncWorker.start();
+      registerSyncIpcHandlers(syncService, syncWorker);
+      registerAppIpcHandlers(() => {
+        const overview = syncService.getOverview(syncWorker?.configured ?? false);
+        if (overview.status === 'connected') return 'connected';
+        if (
+          overview.status === 'offline' ||
+          overview.status === 'syncing' ||
+          overview.status === 'idle'
+        )
+          return 'offline';
+        if (overview.status === 'error') return 'error';
+        return 'not-configured';
+      });
       registerAuthIpcHandlers();
       registerInventoryIpcHandlers();
       registerCheckoutIpcHandlers();
@@ -98,6 +119,7 @@ app
   });
 
 app.on('before-quit', () => {
+  syncWorker?.stop();
   closeLocalDatabase();
 });
 

@@ -11,6 +11,7 @@ import ReportsView from '@/views/ReportsView.vue';
 import PurchasingView from '@/views/PurchasingView.vue';
 import CashSessionsView from '@/views/CashSessionsView.vue';
 import AccountingView from '@/views/AccountingView.vue';
+import SyncView from '@/views/SyncView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -108,6 +109,17 @@ export const router = createRouter({
         description: 'Chart of accounts and balanced journal entries.',
         module: 'Accounting',
         permission: 'accounting.view',
+      },
+    },
+    {
+      path: '/sync',
+      name: 'sync',
+      component: SyncView,
+      meta: {
+        title: 'Synchronization',
+        description: 'Outbox health, delivery status and retry controls.',
+        module: 'Operations',
+        permission: 'sync.view',
       },
     },
     {

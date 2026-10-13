@@ -14,6 +14,7 @@ const navigation = [
   { label: 'Purchasing', to: '/purchasing', icon: '⇄', permission: 'purchasing.view' },
   { label: 'Reports', to: '/reports', icon: '▥', permission: 'reports.view' },
   { label: 'Accounting', to: '/accounting', icon: '∑', permission: 'accounting.view' },
+  { label: 'Synchronization', to: '/sync', icon: '↻', permission: 'sync.view' },
   { label: 'Settings', to: '/settings', icon: '⚙', permission: 'settings.manage' },
 ];
 const visibleNavigation = computed(() =>

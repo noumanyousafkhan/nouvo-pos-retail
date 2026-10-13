@@ -27,21 +27,21 @@ This document separates implemented code from acceptance-tested behavior. A data
 ## Verification run during this work session
 
 - `npm run typecheck`: passed after cashier-session IPC, renderer and database migration changes.
-- `npm test`: **51 tests across 15 test files passed**, including cashier reconciliation and accounting posting tests.
-- `npm run lint`: passed with zero warnings.
-- `npm run format:check`: passed.
-- `npm audit --omit=dev`: 0 production dependency vulnerabilities at last run.
-- `npm run build`: passed with all 51 tests, TypeScript checks and renderer/main/preload production bundles.
-- `npm run build:app -- --dir`: Linux unpacked app packaging passed after schema v7 and cashier shifts; schema v8 accounting is now implemented and must be repackaged. A dedicated packaged-app interaction smoke test is still required for cashier shifts, purchasing, returns and voids.
+- `npm test`: **56 tests across 17 test files passed**, including cashier reconciliation, accounting postings, and sync outbox state transitions/recovery.
+- `npm run lint`: passed with zero warnings after sync worker integration.
+- `npm run format:check`: passed after sync dashboard and IPC integration.
+- `npm audit --omit=dev`: 0 production dependency vulnerabilities at last run; rerun before release.
+- Renderer/main/preload production build passed with `npx electron-vite build`; TypeScript checks passed after the sync integration.
+- Linux unpacked packaging passed with `npx electron-builder --dir --linux` for schema v9. A time-limited Xvfb launch stayed alive, but Chromium emitted GPU/zygote errors, so this is not accepted as a successful renderer/UI smoke test. Dedicated packaged interaction tests remain required for sync, cashier shifts, purchasing, returns and voids.
 - Windows NSIS packaging was attempted; electron-builder failed while resolving `github.com` (`EAI_AGAIN`). The Windows installer has not been produced or verified; retry when network/DNS access is available.
-- Previous packaged Electron smoke test under Xvfb passed first-run owner setup, dashboard, Reports, Inventory, Checkout and Settings routes, plus creating a staff account through authenticated IPC. The current schema-v8 package also stayed alive for an 8-second Xvfb launch smoke test; full interactive cash-session/accounting UI smoke testing remains outstanding.
+- A previous packaged Electron smoke test under Xvfb passed first-run owner setup, dashboard, Reports, Inventory, Checkout and Settings routes, plus creating a staff account through authenticated IPC. The schema-v9 package stayed alive during a time-limited Xvfb launch, but renderer GPU/zygote errors were logged; a clean interactive packaged UI smoke test remains outstanding.
 - Node emits an experimental warning for `node:sqlite`. A stable driver and actual packaged Electron compatibility across target operating systems are not yet verified.
 
 ## Not yet complete — do not treat this build as production-ready
 
 - Purchasing gaps: supplier purchase returns, supplier balance tracking, supplier invoice reconciliation and supplier payment settlement. Basic suppliers, draft purchase orders, receiving and cancellation are implemented and service-tested. Purchasing and return/void UI flows still need a dedicated packaged-app interaction smoke test after the latest schema migrations.
 - Accounting gaps: manual journals/reversals, supplier settlement/aging, inventory valuation ledger, account-specific payment clearing, financial statements and accountant-approved tax/reporting policy. Default posting matrix remains provisional until signed off.
-- Central service/database, counter provisioning/stock allocation, background sync worker, retry policy and conflict resolution. `outbox_events` is storage groundwork for these workflows, not a working sync system.
+- Central PostgreSQL sync service/API, authenticated counter provisioning and stock allocation, server-side idempotent event ingestion, and conflict resolution. The desktop sync worker/outbox diagnostics are implemented, but remote delivery is not production-ready until a compatible server is built, deployed and acceptance-tested.
 - Full branding acceptance: logo asset management, historical receipt branding verification and direct thermal-printer hardware testing.
 - Report gaps: no cashier/category/gross-margin/accounting reports yet; stock value is an estimate using current purchase cost, not a posted accounting valuation. Purchases are not integrated into financial statements.
 - End-to-end acceptance on real store data, Windows installer/update tests, Linux packaged install test, normal sandboxed launch verification and peripheral/hardware testing.

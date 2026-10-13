@@ -5,6 +5,7 @@ import type { ReportsApi } from './reports';
 import type { PurchasingApi } from './purchasing';
 import type { CashSessionsApi } from './cash-sessions';
 import type { AccountingApi } from './accounting';
+import type { SyncApi } from './sync';
 
 export const EmptyPayloadSchema = z.object({}).strict();
 
@@ -25,7 +26,7 @@ export type AppInfo = z.infer<typeof AppInfoSchema>;
 export type RuntimeStatus = z.infer<typeof RuntimeStatusSchema>;
 
 export interface NouvoApi
-  extends ProductApi, AuthApi, ReportsApi, PurchasingApi, CashSessionsApi, AccountingApi {
+  extends ProductApi, AuthApi, ReportsApi, PurchasingApi, CashSessionsApi, AccountingApi, SyncApi {
   getAppInfo(): Promise<AppInfo>;
   getRuntimeStatus(): Promise<RuntimeStatus>;
 }

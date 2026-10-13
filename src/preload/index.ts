@@ -42,6 +42,9 @@ const api: NouvoApi = Object.freeze({
   listCashierSessions: () => ipcRenderer.invoke('cash-session:list-history'),
   listAccountingAccounts: () => ipcRenderer.invoke('accounting:list-accounts'),
   listAccountingJournals: () => ipcRenderer.invoke('accounting:list-journals'),
+  getSyncOverview: () => ipcRenderer.invoke('sync:get-overview'),
+  retryFailedSyncEvents: () => ipcRenderer.invoke('sync:retry-failed'),
+  runSyncNow: () => ipcRenderer.invoke('sync:run-now'),
   openCashierSession: (input: OpenCashierSessionInput) =>
     ipcRenderer.invoke('cash-session:open', input),
   recordCashMovement: (input: CashMovementInput) =>
