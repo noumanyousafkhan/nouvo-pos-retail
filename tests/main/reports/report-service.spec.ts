@@ -77,6 +77,9 @@ describe('report service', () => {
     expect(report.byPaymentMethod).toEqual([
       { method: 'cash', amountMinor: 2000, paymentCount: 1 },
     ]);
+    expect(report.byCashier).toEqual([
+      { cashierName: 'Unassigned cashier', saleCount: 1, totalMinor: 2000 },
+    ]);
     expect(report.topProducts).toEqual([
       { productName: 'Rice 1kg', quantityMilli: 2000, totalMinor: 2000 },
     ]);
@@ -125,6 +128,7 @@ describe('report service', () => {
       daily: [],
       topProducts: [],
       byPaymentMethod: [],
+      byCashier: [],
     });
   });
 });

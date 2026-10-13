@@ -56,6 +56,11 @@ export class ReportService {
       amount_minor: number;
       payment_count: number;
     }[];
+    const byCashier = this.database
+      .prepare(
+        `SELECT COALESCE(NULLIF(trim(u.display_name),''),'Unassigned cashier') AS cashier_name, COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN users u ON u.id=s.cashier_user_id LEFT JOIN (${refundAggregate}) r ON r.sale_id=s.id WHERE ${where} GROUP BY s.cashier_user_id, u.display_name HAVING SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))) > 0 OR COUNT(*) > 0 ORDER BY total_minor DESC, cashier_name LIMIT 50`,
+      )
+      .all(...params) as { cashier_name: string; sale_count: number; total_minor: number }[];
     const topProducts = this.database
       .prepare(
         `SELECT sl.product_name_snapshot AS product_name, COALESCE(SUM(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0))),0) AS quantity_milli, COALESCE(SUM(MAX(0, sl.line_total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sale_lines sl JOIN sales s ON s.id = sl.sale_id LEFT JOIN (SELECT rl.original_sale_line_id, SUM(rl.quantity_milli) AS returned_quantity_milli, SUM(rl.refund_total_minor) AS refund_total_minor FROM sale_return_lines rl JOIN sale_returns sr ON sr.id = rl.sale_return_id WHERE sr.status = 'completed' AND sr.operation = 'return' GROUP BY rl.original_sale_line_id) r ON r.original_sale_line_id = sl.id WHERE ${where} GROUP BY sl.product_name_snapshot HAVING SUM(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0))) > 0 ORDER BY total_minor DESC LIMIT 10`,
@@ -88,6 +93,11 @@ export class ReportService {
         method: row.method,
         amountMinor: row.amount_minor,
         paymentCount: row.payment_count,
+      })),
+      byCashier: byCashier.map((row) => ({
+        cashierName: row.cashier_name,
+        saleCount: row.sale_count,
+        totalMinor: row.total_minor,
       })),
       topProducts: topProducts.map((row) => ({
         productName: row.product_name,

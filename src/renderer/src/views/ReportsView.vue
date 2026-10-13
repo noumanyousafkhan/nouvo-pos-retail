@@ -132,6 +132,34 @@ onMounted(loadReport);
           ><small>Current purchase cost × on-hand</small></BaseCard
         >
       </section>
+      <BaseCard class="reports-table-card reports-cashier-card">
+        <header class="reports-card-heading">
+          <div>
+            <h2>Cashier performance</h2>
+            <p>Net sales after recorded refunds, across this store</p>
+          </div>
+          <span>{{ report.byCashier.length }} cashiers</span>
+        </header>
+        <div v-if="report.byCashier.length" class="reports-table-wrap">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Cashier</th>
+                <th>Sales</th>
+                <th class="reports-number">Net sales</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in report.byCashier" :key="row.cashierName">
+                <td>{{ row.cashierName }}</td>
+                <td>{{ row.saleCount }}</td>
+                <td class="reports-number">{{ money(row.totalMinor) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="reports-empty">No cashier sales in this date range.</div>
+      </BaseCard>
       <section class="reports-two-column">
         <BaseCard class="reports-table-card">
           <header class="reports-card-heading">
