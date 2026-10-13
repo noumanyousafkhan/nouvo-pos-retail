@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import type {
+  ManualJournalInput,
+  ReverseManualJournalInput,
+} from '../../shared/contracts/accounting';
 
 type AccountCode = '1000' | '1010' | '1200' | '2000' | '2100' | '4000' | '4050' | '5000';
 type JournalLineInput = {
@@ -253,6 +257,7 @@ export class AccountingService {
     description: string;
     currencyCode: string;
     postedAt: string;
+    status: 'posted' | 'reversed';
     debitMinor: number;
     creditMinor: number;
   }[] {
@@ -260,7 +265,7 @@ export class AccountingService {
     const safeLimit = Math.max(1, Math.min(250, Math.trunc(limit)));
     return this.database
       .prepare(
-        'SELECT je.id, je.entry_number AS entryNumber, je.source_type AS sourceType, je.source_id AS sourceId, je.description, je.currency_code AS currencyCode, je.posted_at AS postedAt, COALESCE(SUM(jl.debit_minor),0) AS debitMinor, COALESCE(SUM(jl.credit_minor),0) AS creditMinor FROM journal_entries je LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.store_id = ? GROUP BY je.id ORDER BY je.posted_at DESC LIMIT ?',
+        'SELECT je.id, je.entry_number AS entryNumber, je.source_type AS sourceType, je.source_id AS sourceId, je.description, je.currency_code AS currencyCode, je.posted_at AS postedAt, je.status AS status, COALESCE(SUM(jl.debit_minor),0) AS debitMinor, COALESCE(SUM(jl.credit_minor),0) AS creditMinor FROM journal_entries je LEFT JOIN journal_lines jl ON jl.journal_entry_id = je.id WHERE je.store_id = ? GROUP BY je.id ORDER BY je.posted_at DESC LIMIT ?',
       )
       .all(this.storeId, safeLimit) as {
       id: string;
@@ -270,9 +275,259 @@ export class AccountingService {
       description: string;
       currencyCode: string;
       postedAt: string;
+      status: 'posted' | 'reversed';
       debitMinor: number;
       creditMinor: number;
     }[];
+  }
+
+  listTrialBalance(asOfDate: string): {
+    accountId: string;
+    code: string;
+    name: string;
+    accountType: string;
+    debitBalanceMinor: number;
+    creditBalanceMinor: number;
+  }[] {
+    if (!this.isValidDate(asOfDate))
+      throw new Error('Trial balance date must be a valid YYYY-MM-DD date.');
+    this.ensureChartOfAccounts();
+    const rows = this.database
+      .prepare(
+        'SELECT a.id AS accountId,a.code,a.name,a.account_type AS accountType,COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.debit_minor ELSE 0 END),0) AS debitTotal,COALESCE(SUM(CASE WHEN je.id IS NOT NULL THEN jl.credit_minor ELSE 0 END),0) AS creditTotal FROM accounts a LEFT JOIN journal_lines jl ON jl.account_id=a.id LEFT JOIN journal_entries je ON je.id=jl.journal_entry_id AND je.store_id=a.store_id AND substr(je.posted_at,1,10)<=? WHERE a.store_id=? GROUP BY a.id ORDER BY a.code',
+      )
+      .all(asOfDate, this.storeId) as {
+      accountId: string;
+      code: string;
+      name: string;
+      accountType: string;
+      debitTotal: number;
+      creditTotal: number;
+    }[];
+    return rows.map((row) => {
+      const net = row.debitTotal - row.creditTotal;
+      return {
+        accountId: row.accountId,
+        code: row.code,
+        name: row.name,
+        accountType: row.accountType,
+        debitBalanceMinor: Math.max(0, net),
+        creditBalanceMinor: Math.max(0, -net),
+      };
+    });
+  }
+
+  getIncomeStatement(
+    startDate: string,
+    endDate: string,
+  ): {
+    startDate: string;
+    endDate: string;
+    currencyCode: string;
+    totalRevenueMinor: number;
+    totalExpensesMinor: number;
+    netIncomeMinor: number;
+  } {
+    if (!this.isValidDate(startDate) || !this.isValidDate(endDate) || startDate > endDate)
+      throw new Error(
+        'Income statement requires valid dates with start date on or before end date.',
+      );
+    const currency = this.database
+      .prepare('SELECT currency_code AS currencyCode FROM stores WHERE id=?')
+      .get(this.storeId) as { currencyCode: string } | undefined;
+    if (!currency) throw new Error('Store currency is not configured.');
+    const rows = this.database
+      .prepare(
+        "SELECT a.account_type AS accountType,a.normal_balance AS normalBalance,COALESCE(SUM(jl.debit_minor),0) AS debitTotal,COALESCE(SUM(jl.credit_minor),0) AS creditTotal FROM accounts a JOIN journal_lines jl ON jl.account_id=a.id JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE a.store_id=? AND je.store_id=? AND substr(je.posted_at,1,10) BETWEEN ? AND ? AND a.account_type IN ('income','expense') GROUP BY a.id",
+      )
+      .all(this.storeId, this.storeId, startDate, endDate) as {
+      accountType: string;
+      normalBalance: string;
+      debitTotal: number;
+      creditTotal: number;
+    }[];
+    let totalRevenueMinor = 0;
+    let totalExpensesMinor = 0;
+    for (const row of rows) {
+      if (row.accountType === 'income') totalRevenueMinor += row.creditTotal - row.debitTotal;
+      if (row.accountType === 'expense')
+        totalExpensesMinor +=
+          row.normalBalance === 'debit'
+            ? row.debitTotal - row.creditTotal
+            : row.creditTotal - row.debitTotal;
+    }
+    return {
+      startDate,
+      endDate,
+      currencyCode: currency.currencyCode,
+      totalRevenueMinor,
+      totalExpensesMinor,
+      netIncomeMinor: totalRevenueMinor - totalExpensesMinor,
+    };
+  }
+
+  postManualJournal(input: ManualJournalInput): string {
+    this.ensureChartOfAccounts();
+    if (input.lines.length < 2 || input.lines.length > 50)
+      throw new Error('A manual journal must contain between 2 and 50 lines.');
+    const debit = input.lines.reduce((sum, line) => sum + line.debitMinor, 0);
+    const credit = input.lines.reduce((sum, line) => sum + line.creditMinor, 0);
+    if (!Number.isSafeInteger(debit) || debit <= 0 || debit !== credit)
+      throw new Error('Manual journal debits and credits must balance to a positive amount.');
+    for (const line of input.lines) {
+      if (
+        !Number.isSafeInteger(line.debitMinor) ||
+        !Number.isSafeInteger(line.creditMinor) ||
+        line.debitMinor < 0 ||
+        line.creditMinor < 0
+      )
+        throw new Error(
+          'Manual journal amounts must be non-negative safe integers in minor currency units.',
+        );
+      if (line.debitMinor > 0 === line.creditMinor > 0)
+        throw new Error(
+          'Each manual journal line must contain exactly one positive debit or credit.',
+        );
+      const account = this.database
+        .prepare('SELECT id FROM accounts WHERE id=? AND store_id=? AND is_active=1')
+        .get(line.accountId, this.storeId);
+      if (!account)
+        throw new Error('A journal line references an inactive or foreign-store account.');
+    }
+    const store = this.database
+      .prepare('SELECT currency_code AS currencyCode FROM stores WHERE id=?')
+      .get(this.storeId) as { currencyCode: string } | undefined;
+    if (!store) throw new Error('Store currency is not configured.');
+    this.database.exec('SAVEPOINT accounting_manual');
+    try {
+      const id = randomUUID();
+      const entryNumber = this.nextEntryNumber();
+      this.database
+        .prepare(
+          "INSERT INTO journal_entries (id,store_id,entry_number,source_type,source_id,status,currency_code,description,posted_by_user_id) VALUES (?,?,?,'manual',?,'posted',?,?,?)",
+        )
+        .run(
+          id,
+          this.storeId,
+          entryNumber,
+          id,
+          store.currencyCode,
+          input.description.trim(),
+          this.actorUserId,
+        );
+      const insertLine = this.database.prepare(
+        'INSERT INTO journal_lines (id,journal_entry_id,account_id,line_number,debit_minor,credit_minor,memo) VALUES (?,?,?,?,?,?,?)',
+      );
+      input.lines.forEach((line, index) =>
+        insertLine.run(
+          randomUUID(),
+          id,
+          line.accountId,
+          index + 1,
+          line.debitMinor,
+          line.creditMinor,
+          line.memo.trim(),
+        ),
+      );
+      this.database.exec('RELEASE SAVEPOINT accounting_manual');
+      return id;
+    } catch (error) {
+      this.database.exec('ROLLBACK TO SAVEPOINT accounting_manual');
+      this.database.exec('RELEASE SAVEPOINT accounting_manual');
+      throw error;
+    }
+  }
+
+  reverseManualJournal(input: ReverseManualJournalInput): string {
+    const prior = this.findExisting('reversal', input.entryId);
+    if (prior) return prior;
+    const original = this.database
+      .prepare(
+        "SELECT id,entry_number,currency_code,description,status FROM journal_entries WHERE id=? AND store_id=? AND source_type='manual'",
+      )
+      .get(input.entryId, this.storeId) as
+      | {
+          id: string;
+          entry_number: string;
+          currency_code: string;
+          description: string;
+          status: string;
+        }
+      | undefined;
+    if (!original)
+      throw new Error('Only a manual journal belonging to this store can be reversed.');
+    if (original.status !== 'posted') throw new Error('This manual journal is already reversed.');
+    const lines = this.database
+      .prepare(
+        'SELECT account_id AS accountId,debit_minor AS debitMinor,credit_minor AS creditMinor,memo FROM journal_lines WHERE journal_entry_id=? ORDER BY line_number',
+      )
+      .all(original.id) as {
+      accountId: string;
+      debitMinor: number;
+      creditMinor: number;
+      memo: string;
+    }[];
+    if (lines.length < 2) throw new Error('The original journal has no valid lines to reverse.');
+    this.database.exec('SAVEPOINT accounting_reverse');
+    try {
+      const reversalId = randomUUID();
+      const entryNumber = this.nextEntryNumber();
+      this.database
+        .prepare(
+          "INSERT INTO journal_entries (id,store_id,entry_number,source_type,source_id,status,currency_code,description,posted_by_user_id) VALUES (?,?,?,'reversal',?,'posted',?,?,?)",
+        )
+        .run(
+          reversalId,
+          this.storeId,
+          entryNumber,
+          original.id,
+          original.currency_code,
+          'Reversal of ' + original.entry_number + ': ' + input.reason.trim(),
+          this.actorUserId,
+        );
+      const insertLine = this.database.prepare(
+        'INSERT INTO journal_lines (id,journal_entry_id,account_id,line_number,debit_minor,credit_minor,memo) VALUES (?,?,?,?,?,?,?)',
+      );
+      lines.forEach((line, index) =>
+        insertLine.run(
+          randomUUID(),
+          reversalId,
+          line.accountId,
+          index + 1,
+          line.creditMinor,
+          line.debitMinor,
+          'Reversal: ' + (line.memo || original.description) + ' — ' + input.reason.trim(),
+        ),
+      );
+      this.database
+        .prepare(
+          "UPDATE journal_entries SET status='reversed' WHERE id=? AND store_id=? AND status='posted'",
+        )
+        .run(original.id, this.storeId);
+      this.database.exec('RELEASE SAVEPOINT accounting_reverse');
+      return reversalId;
+    } catch (error) {
+      this.database.exec('ROLLBACK TO SAVEPOINT accounting_reverse');
+      this.database.exec('RELEASE SAVEPOINT accounting_reverse');
+      throw error;
+    }
+  }
+
+  private nextEntryNumber(): string {
+    const datePart = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+    const prefix = 'JE-' + datePart + '-';
+    const sequence = this.database
+      .prepare(
+        'SELECT COUNT(*) AS count FROM journal_entries WHERE store_id=? AND entry_number LIKE ?',
+      )
+      .get(this.storeId, prefix + '%') as { count: number };
+    return prefix + String(sequence.count + 1).padStart(4, '0');
+  }
+
+  private isValidDate(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(value + 'T00:00:00Z');
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
 
   private saleCost(saleId: string): number {

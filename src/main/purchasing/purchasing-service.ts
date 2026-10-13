@@ -11,6 +11,7 @@ import {
 } from '../../shared/contracts/purchasing';
 import { runInTransaction } from '../database/connection';
 import { AccountingService } from '../accounting/accounting-service';
+import { ProductRepository } from '../inventory/product-repository';
 
 interface SupplierRow {
   id: string;
@@ -297,6 +298,7 @@ export class PurchasingService {
           )
           .get(line.product_id, this.counterId) as { quantity: number };
         const newQuantity = current.quantity + line.quantity_ordered_milli;
+        const movementId = randomUUID();
         const averageCost =
           newQuantity > 0
             ? Math.round(
@@ -310,7 +312,7 @@ export class PurchasingService {
             "INSERT INTO stock_movements (id, store_id, counter_id, product_id, movement_type, quantity_delta_milli, unit_cost_minor, reference_type, reference_id, reason, actor_user_id) VALUES (?, ?, ?, ?, 'receipt', ?, ?, 'purchase_order', ?, ?, ?)",
           )
           .run(
-            randomUUID(),
+            movementId,
             this.storeId,
             this.counterId,
             line.product_id,
@@ -321,8 +323,41 @@ export class PurchasingService {
             this.actorUserId,
           );
         this.database
+          .prepare(
+            "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'stock.movement.recorded', 'stock_movement', ?, ?)",
+          )
+          .run(
+            randomUUID(),
+            movementId,
+            JSON.stringify({
+              schemaVersion: 1,
+              movementId,
+              storeId: this.storeId,
+              counterId: this.counterId,
+              productId: line.product_id,
+              movementType: 'receipt',
+              quantityDeltaMilli: line.quantity_ordered_milli,
+              unitCostMinor: line.unit_cost_minor,
+              reason: `Goods received against ${order.order_number}`,
+            }),
+          );
+        this.database
           .prepare('UPDATE products SET purchase_cost_minor = ?, updated_at = ? WHERE id = ?')
           .run(averageCost, new Date().toISOString(), line.product_id);
+        const updatedProduct = new ProductRepository(this.database, this.counterId).findById(
+          this.storeId,
+          line.product_id,
+        );
+        if (updatedProduct)
+          this.database
+            .prepare(
+              "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'product.updated', 'product', ?, ?)",
+            )
+            .run(
+              randomUUID(),
+              line.product_id,
+              JSON.stringify({ schemaVersion: 1, product: updatedProduct }),
+            );
         this.database
           .prepare(
             'UPDATE purchase_order_lines SET quantity_received_milli = quantity_ordered_milli WHERE id = ?',

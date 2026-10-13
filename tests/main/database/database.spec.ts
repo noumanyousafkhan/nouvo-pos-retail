@@ -2,9 +2,14 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openLocalDatabase, runInTransaction } from '../../../src/main/database/connection';
-import { applyMigrations } from '../../../src/main/database/migrations';
+import {
+  applyMigrations,
+  migrationChecksum,
+  migrations,
+} from '../../../src/main/database/migrations';
 
 const temporaryDirectories: string[] = [];
 
@@ -49,6 +54,7 @@ describe('local SQLite database foundation', () => {
         { version: 7, name: 'cashier_shifts_and_reconciliation' },
         { version: 8, name: 'double_entry_accounting_ledger' },
         { version: 9, name: 'sync_status_and_outbox_diagnostics' },
+        { version: 10, name: 'counter_stock_allocation_enforcement' },
       ]);
       expect(
         database.connection
@@ -58,7 +64,84 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 9 });
+      ).toEqual({ count: 10 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('backfills legacy products, stock movements and store settings into the sync outbox', () => {
+    const database = new DatabaseSync(':memory:');
+    try {
+      database.exec('PRAGMA foreign_keys = ON');
+      database.exec(`
+        CREATE TABLE schema_migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          checksum TEXT NOT NULL,
+          applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        ) STRICT;
+      `);
+      for (const migration of migrations.slice(0, 9)) {
+        database.exec(migration.sql);
+        database
+          .prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)')
+          .run(migration.version, migration.name, migrationChecksum(migration));
+      }
+      const storeId = '10000000-0000-4000-8000-000000000001';
+      const counterId = '20000000-0000-4000-8000-000000000001';
+      const productId = '30000000-0000-4000-8000-000000000001';
+      const movementId = '40000000-0000-4000-8000-000000000001';
+      database
+        .prepare('INSERT INTO stores (id, name, currency_code) VALUES (?, ?, ?)')
+        .run(storeId, 'Legacy Store', 'PKR');
+      database
+        .prepare('INSERT INTO counters (id, store_id, name) VALUES (?, ?, ?)')
+        .run(counterId, storeId, 'Counter 1');
+      database
+        .prepare(
+          'INSERT INTO products (id, store_id, name, base_unit, purchase_cost_minor, selling_price_minor) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(productId, storeId, 'Legacy Rice', 'piece', 100, 200);
+      database
+        .prepare('INSERT INTO product_barcodes (id, product_id, barcode) VALUES (?, ?, ?)')
+        .run('50000000-0000-4000-8000-000000000001', productId, '1234567890123');
+      database
+        .prepare(
+          "INSERT INTO stock_movements (id, store_id, counter_id, product_id, movement_type, quantity_delta_milli, reference_type, reference_id, reason) VALUES (?, ?, ?, ?, 'receipt', 1000, 'purchase_order', 'PO-1', 'Legacy receipt')",
+        )
+        .run(movementId, storeId, counterId, productId);
+      applyMigrations(database);
+      const events = database
+        .prepare(
+          'SELECT id, event_type AS eventType, aggregate_id AS aggregateId, payload_json AS payloadJson FROM outbox_events ORDER BY rowid',
+        )
+        .all() as { id: string; eventType: string; aggregateId: string; payloadJson: string }[];
+      expect(events).toHaveLength(3);
+      expect(events.map((event) => event.eventType)).toEqual([
+        'store.settings.updated',
+        'product.created',
+        'stock.movement.recorded',
+      ]);
+      for (const event of events)
+        expect(event.id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+      expect(JSON.parse(events[0].payloadJson).settings).toMatchObject({
+        storeId,
+        name: 'Legacy Store',
+        currencyCode: 'PKR',
+      });
+      expect(JSON.parse(events[1].payloadJson).product).toMatchObject({
+        id: productId,
+        name: 'Legacy Rice',
+        barcodes: ['1234567890123'],
+      });
+      expect(JSON.parse(events[2].payloadJson)).toMatchObject({
+        movementId,
+        productId,
+        quantityDeltaMilli: 1000,
+      });
     } finally {
       database.close();
     }

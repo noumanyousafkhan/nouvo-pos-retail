@@ -85,6 +85,86 @@ describe('double-entry accounting postings', () => {
     ).toEqual({ count: 1 });
   });
 
+  it('returns a balanced trial balance and period income statement', () => {
+    const { database, storeId, counterId, productId, userId } = setup();
+    const sale = new CheckoutService(database.connection, storeId, counterId).complete({
+      idempotencyKey: randomUUID(),
+      items: [{ productId, quantityMilli: 2000 }],
+      paymentLines: [{ paymentMethod: 'cash', amountMinor: 2200 }],
+    });
+    expect(sale.totalMinor).toBe(2200);
+    const line = database.connection
+      .prepare('SELECT id FROM sale_lines WHERE sale_id = ?')
+      .get(sale.id) as { id: string };
+    new ReturnsService(database.connection, storeId, counterId, userId).returnSale({
+      saleId: sale.id,
+      reason: 'Statement test return',
+      items: [{ saleLineId: line.id, quantityMilli: 1000 }],
+      refundPaymentMethod: 'cash',
+    });
+    const service = new AccountingService(database.connection, storeId);
+    const today = new Date().toISOString().slice(0, 10);
+    const trialBalance = service.listTrialBalance(today);
+    expect(trialBalance.length).toBeGreaterThan(0);
+    expect(trialBalance.reduce((sum, row) => sum + row.debitBalanceMinor, 0)).toBe(
+      trialBalance.reduce((sum, row) => sum + row.creditBalanceMinor, 0),
+    );
+    expect(service.getIncomeStatement(today, today)).toMatchObject({
+      startDate: today,
+      endDate: today,
+      currencyCode: 'PKR',
+      totalRevenueMinor: 1000,
+      totalExpensesMinor: 500,
+      netIncomeMinor: 500,
+    });
+    expect(() => service.listTrialBalance('2026-02-31')).toThrow(/valid YYYY-MM-DD/);
+    expect(() => service.getIncomeStatement(today, '2020-01-01')).toThrow(
+      /start date on or before end date/,
+    );
+  });
+
+  it('posts and reverses an owner manual journal without changing the final ledger balance', () => {
+    const { database, storeId, userId } = setup();
+    const service = new AccountingService(database.connection, storeId, userId);
+    const accounts = service.listAccounts();
+    const cash = accounts.find((account) => account.code === '1000')!;
+    const revenue = accounts.find((account) => account.code === '4000')!;
+    const entryId = service.postManualJournal({
+      description: 'Manual opening correction',
+      lines: [
+        { accountId: cash.id, debitMinor: 5000, creditMinor: 0, memo: 'Correction debit' },
+        { accountId: revenue.id, debitMinor: 0, creditMinor: 5000, memo: 'Correction credit' },
+      ],
+    });
+    expect(journalTotals(database, 'manual', entryId)).toEqual({
+      debitMinor: 5000,
+      creditMinor: 5000,
+    });
+    const reversalId = service.reverseManualJournal({
+      entryId,
+      reason: 'Entered against the wrong source',
+    });
+    expect(service.reverseManualJournal({ entryId, reason: 'Retry same reversal' })).toBe(
+      reversalId,
+    );
+    expect(journalTotals(database, 'reversal', entryId)).toEqual({
+      debitMinor: 5000,
+      creditMinor: 5000,
+    });
+    expect(
+      database.connection.prepare('SELECT status FROM journal_entries WHERE id=?').get(entryId),
+    ).toEqual({ status: 'reversed' });
+    const today = new Date().toISOString().slice(0, 10);
+    const trialBalance = service.listTrialBalance(today);
+    expect(trialBalance.reduce((sum, row) => sum + row.debitBalanceMinor, 0)).toBe(0);
+    expect(trialBalance.reduce((sum, row) => sum + row.creditBalanceMinor, 0)).toBe(0);
+    expect(service.getIncomeStatement(today, today)).toMatchObject({
+      totalRevenueMinor: 0,
+      totalExpensesMinor: 0,
+      netIncomeMinor: 0,
+    });
+  });
+
   it('posts a balanced return that reverses tax and original inventory cost', () => {
     const { database, storeId, counterId, productId, userId } = setup();
     const sale = new CheckoutService(database.connection, storeId, counterId).complete({

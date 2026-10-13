@@ -1,33 +1,50 @@
-import { SyncBatchResponseSchema } from '../../shared/contracts/sync';
+import { SyncBatchResponseSchema, SyncSnapshotSchema } from '../../shared/contracts/sync';
+import { normalizeSyncUrl } from './sync-config-store';
 import { SyncService } from './sync-service';
 
 export class SyncWorker {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
-  readonly configured: boolean;
-  private readonly baseUrl: string | null;
-  private readonly token: string | null;
+  private baseUrl: string | null = null;
+  private token: string | null = null;
 
   constructor(
     private readonly service: SyncService,
     env: NodeJS.ProcessEnv = process.env,
   ) {
-    const rawUrl = env.NOUVO_SYNC_URL?.trim() ?? '';
-    this.token = env.NOUVO_SYNC_TOKEN?.trim() || null;
+    this.setCredentials(env.NOUVO_SYNC_URL ?? '', env.NOUVO_SYNC_TOKEN ?? '');
+  }
+
+  get configured(): boolean {
+    return Boolean(this.baseUrl && this.token);
+  }
+
+  getPublicConfiguration(): { url: string; configured: boolean } {
+    return { url: this.baseUrl ?? '', configured: this.configured };
+  }
+
+  configure(url: string, token: string): void {
+    const normalizedUrl = normalizeSyncUrl(url);
+    const normalizedToken = token.trim();
+    if (normalizedToken.length < 32)
+      throw new Error('Counter token must contain at least 32 characters.');
+    this.stop();
+    this.baseUrl = normalizedUrl;
+    this.token = normalizedToken;
+    this.service.initialize(true);
+    this.startTimer();
+  }
+
+  private setCredentials(urlInput: string, tokenInput: string): void {
     try {
-      const url = new URL(rawUrl);
-      const secure =
-        url.protocol === 'https:' ||
-        (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname));
-      this.baseUrl = secure ? url.toString() : null;
+      this.baseUrl = normalizeSyncUrl(urlInput);
     } catch {
       this.baseUrl = null;
     }
-    this.configured = Boolean(this.baseUrl && this.token);
+    this.token = tokenInput.trim().length >= 32 ? tokenInput.trim() : null;
   }
 
-  start(): void {
-    this.service.initialize(this.configured);
+  private startTimer(): void {
     if (!this.configured || this.timer) return;
     void this.syncOnce();
     this.timer = setInterval(() => {
@@ -35,9 +52,31 @@ export class SyncWorker {
     }, 30_000);
   }
 
+  start(): void {
+    this.service.initialize(this.configured);
+    this.startTimer();
+  }
+
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  private async pullSnapshot(): Promise<void> {
+    if (!this.baseUrl || !this.token) return;
+    const overview = this.service.getOverview(true);
+    if (overview.pendingCount > 0 || overview.inFlightCount > 0 || overview.failedCount > 0) return;
+    const response = await fetch(new URL('/api/v1/sync/snapshot', this.baseUrl), {
+      method: 'GET',
+      headers: { authorization: `Bearer ${this.token}`, 'x-counter-id': this.service.counterId },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Sync snapshot request returned HTTP ${response.status}.`);
+    const parsed = SyncSnapshotSchema.safeParse(await response.json());
+    if (!parsed.success)
+      throw new Error('Sync snapshot does not match the expected product/allocation contract.');
+    this.service.applySnapshot(parsed.data);
+    this.service.setStatus('connected', null, true, true);
   }
 
   async syncOnce(): Promise<void> {
@@ -48,8 +87,16 @@ export class SyncWorker {
     try {
       batch = this.service.claimBatch(50);
       if (!batch.length) {
+        await this.pullSnapshot();
         const current = this.service.getOverview(true);
-        this.service.setStatus(current.lastSuccessAt ? 'connected' : 'idle');
+        if (current.failedCount > 0)
+          this.service.setStatus('error', current.lastError ?? 'Some sync events need review.');
+        else if (current.pendingCount > 0)
+          this.service.setStatus(
+            'offline',
+            current.lastError ?? 'Sync retry is waiting for its backoff window.',
+          );
+        else this.service.setStatus(current.lastSuccessAt ? 'connected' : 'idle');
         return;
       }
       const endpoint = new URL('/api/v1/sync/events', this.baseUrl);
@@ -109,6 +156,7 @@ export class SyncWorker {
         true,
         !permanentRejection,
       );
+      await this.pullSnapshot();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown sync failure.';
       if (batch.length)

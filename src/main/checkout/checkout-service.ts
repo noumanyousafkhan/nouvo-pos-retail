@@ -102,6 +102,22 @@ export class CheckoutService {
           throw new Error(
             `Insufficient stock for ${product.name}. Available: ${(balance.quantity / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.base_unit}.`,
           );
+        const allocationMode = this.database
+          .prepare(
+            'SELECT allocation_enforced AS allocationEnforced FROM sync_state WHERE counter_id = ?',
+          )
+          .get(this.counterId) as { allocationEnforced: number } | undefined;
+        if (allocationMode?.allocationEnforced === 1) {
+          const allocation = this.database
+            .prepare(
+              'SELECT remaining_quantity_milli AS remainingQuantityMilli FROM counter_stock_allocations WHERE counter_id = ? AND product_id = ?',
+            )
+            .get(this.counterId, productId) as { remainingQuantityMilli: number } | undefined;
+          if (!allocation || allocation.remainingQuantityMilli < quantityMilli)
+            throw new Error(
+              `Allocated stock is insufficient for ${product.name}. Available allocation: ${((allocation?.remainingQuantityMilli ?? 0) / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.base_unit}. Sync with the store manager before selling more.`,
+            );
+        }
 
         const enteredPrice = safeMinor(
           (product.selling_price_minor * quantityMilli) / 1000,
@@ -263,6 +279,33 @@ export class CheckoutService {
           saleId,
           `Sale ${receiptNumber}`,
         );
+
+      const enforceAllocation =
+        (
+          this.database
+            .prepare(
+              'SELECT allocation_enforced AS allocationEnforced FROM sync_state WHERE counter_id = ?',
+            )
+            .get(this.counterId) as { allocationEnforced: number } | undefined
+        )?.allocationEnforced === 1;
+      if (enforceAllocation) {
+        const consumeAllocation = this.database.prepare(
+          'UPDATE counter_stock_allocations SET remaining_quantity_milli = remaining_quantity_milli - ?, updated_at = ? WHERE counter_id = ? AND product_id = ? AND remaining_quantity_milli >= ?',
+        );
+        for (const movement of stockDeltas) {
+          const changed = consumeAllocation.run(
+            movement.quantityMilli,
+            now,
+            this.counterId,
+            movement.productId,
+            movement.quantityMilli,
+          );
+          if (Number(changed.changes) !== 1)
+            throw new Error(
+              'Allocated stock changed during checkout. No sale was saved; refresh stock allocation and retry.',
+            );
+        }
+      }
 
       this.database
         .prepare(

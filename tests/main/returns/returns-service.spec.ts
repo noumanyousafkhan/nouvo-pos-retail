@@ -61,7 +61,24 @@ afterEach(() => {
 describe('sale returns and voids', () => {
   it('supports multiple partial returns without exceeding sold quantity and closes the sale when fully returned', () => {
     const { database, storeId, counterId, productId, returns, sell } = setup();
+    database.connection
+      .prepare(
+        "INSERT INTO sync_state (counter_id, status, allocation_enforced) VALUES (?, 'connected', 1)",
+      )
+      .run(counterId);
+    database.connection
+      .prepare(
+        'INSERT INTO counter_stock_allocations (counter_id, product_id, remaining_quantity_milli) VALUES (?, ?, ?)',
+      )
+      .run(counterId, productId, 5000);
     const sale = sell(2000);
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS quantity FROM counter_stock_allocations WHERE counter_id=? AND product_id=?',
+        )
+        .get(counterId, productId),
+    ).toEqual({ quantity: 3000 });
     const lineId = (
       database.connection.prepare('SELECT id FROM sale_lines WHERE sale_id = ?').get(sale.id) as {
         id: string;
@@ -96,6 +113,13 @@ describe('sale returns and voids', () => {
         )
         .get(productId, counterId),
     ).toEqual({ quantity: 4000 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS quantity FROM counter_stock_allocations WHERE counter_id=? AND product_id=?',
+        )
+        .get(counterId, productId),
+    ).toEqual({ quantity: 4000 });
     expect(returns.getReturnableItems(sale.id)).toMatchObject([
       {
         soldQuantityMilli: 2000,
@@ -120,6 +144,13 @@ describe('sale returns and voids', () => {
           'SELECT SUM(quantity_delta_milli) AS quantity FROM stock_movements WHERE product_id = ? AND counter_id = ?',
         )
         .get(productId, counterId),
+    ).toEqual({ quantity: 5000 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS quantity FROM counter_stock_allocations WHERE counter_id=? AND product_id=?',
+        )
+        .get(counterId, productId),
     ).toEqual({ quantity: 5000 });
     expect(() =>
       returns.returnSale({

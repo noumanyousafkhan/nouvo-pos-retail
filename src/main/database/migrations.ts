@@ -500,6 +500,68 @@ export const migrations: Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 10,
+    name: 'counter_stock_allocation_enforcement',
+    sql: `
+      ALTER TABLE sync_state ADD COLUMN allocation_enforced INTEGER NOT NULL DEFAULT 0 CHECK (allocation_enforced IN (0,1));
+      CREATE TABLE counter_stock_allocations (
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_id TEXT NOT NULL REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        remaining_quantity_milli INTEGER NOT NULL CHECK (remaining_quantity_milli >= 0),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (counter_id, product_id)
+      ) STRICT;
+      CREATE INDEX counter_stock_allocations_product_idx ON counter_stock_allocations(product_id, counter_id);
+
+      INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json, created_at)
+      SELECT
+        lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab', abs(random() % 4) + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
+        'store.settings.updated', 'store', s.id,
+        json_object('schemaVersion', 1, 'settings', json_object(
+          'storeId', s.id, 'name', s.name, 'currencyCode', s.currency_code, 'timezone', s.timezone,
+          'taxBehavior', s.tax_behavior, 'address', COALESCE(s.address, ''), 'phone', COALESCE(s.phone, ''),
+          'businessRegistrationNumber', COALESCE(s.business_registration_number, ''),
+          'receiptFooter', s.receipt_footer, 'receiptPaperWidthMm', s.receipt_paper_width_mm
+        )), s.created_at
+      FROM stores s
+      WHERE NOT EXISTS (
+        SELECT 1 FROM outbox_events o WHERE o.event_type = 'store.settings.updated' AND o.aggregate_type = 'store' AND o.aggregate_id = s.id
+      );
+
+      INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json, created_at)
+      SELECT
+        lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab', abs(random() % 4) + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
+        'product.created', 'product', p.id,
+        json_object('schemaVersion', 1, 'product', json_object(
+          'id', p.id, 'name', p.name, 'description', COALESCE(p.description, ''),
+          'categoryName', COALESCE(c.name, ''), 'sku', p.sku,
+          'barcodes', json(COALESCE((SELECT json_group_array(pb.barcode) FROM product_barcodes pb WHERE pb.product_id = p.id), '[]')),
+          'baseUnit', p.base_unit, 'purchaseCostMinor', p.purchase_cost_minor,
+          'sellingPriceMinor', p.selling_price_minor, 'taxRateBasisPoints', p.tax_rate_basis_points,
+          'isActive', json(CASE WHEN p.is_active = 1 THEN 'true' ELSE 'false' END),
+          'stockOnHandMilli', 0,
+          'createdAt', p.created_at, 'updatedAt', p.updated_at
+        )), p.created_at
+      FROM products p LEFT JOIN categories c ON c.id = p.category_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM outbox_events o WHERE o.event_type = 'product.created' AND o.aggregate_type = 'product' AND o.aggregate_id = p.id
+      );
+
+      INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json, created_at)
+      SELECT
+        lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab', abs(random() % 4) + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))),
+        'stock.movement.recorded', 'stock_movement', sm.id,
+        json_object('schemaVersion', 1, 'movementId', sm.id, 'storeId', sm.store_id, 'counterId', sm.counter_id, 'productId', sm.product_id, 'movementType', sm.movement_type, 'quantityDeltaMilli', sm.quantity_delta_milli, 'unitCostMinor', sm.unit_cost_minor, 'reason', sm.reason),
+        sm.created_at
+      FROM stock_movements sm
+      WHERE sm.counter_id IS NOT NULL AND sm.movement_type NOT IN ('sale','return')
+        AND COALESCE(sm.reference_type, '') <> 'sync_allocation'
+        AND NOT EXISTS (
+          SELECT 1 FROM outbox_events o WHERE o.event_type = 'stock.movement.recorded' AND o.aggregate_type = 'stock_movement' AND o.aggregate_id = sm.id
+        );
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

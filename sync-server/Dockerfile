@@ -14,5 +14,6 @@ COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/migrations ./migrations
+COPY admin ./admin
 EXPOSE 8787
 CMD ["node", "dist/server.js"]

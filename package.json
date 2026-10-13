@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Offline-first desktop POS for cash-and-carry retail stores",
+  "homepage": "https://nextash.com",
+  "desktopName": "nouvo-pos-cash-carry",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -14,20 +16,24 @@
     "lint": "eslint src electron.vite.config.ts vitest.config.ts eslint.config.mjs --max-warnings=0",
     "format:check": "prettier --check src tests docs *.json *.ts *.mjs *.md",
     "format": "prettier --write src tests docs *.json *.ts *.mjs *.md",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "test:e2e:linux": "xvfb-run -a node tests/e2e/packaged-smoke.cjs"
   },
   "build": {
     "appId": "com.nouvo.pos.cashcarry",
-    "productName": "NOUVO POS Cash & Carry",
+    "productName": "NOUVO POS Cash and Carry",
     "directories": {
       "output": "release"
     },
     "files": [
       "out/**/*",
+      "build/icon.png",
+      "build/icon.ico",
       "package.json"
     ],
     "asar": true,
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ]
@@ -41,7 +47,10 @@
         "AppImage",
         "deb"
       ],
-      "category": "Office"
+      "category": "Office",
+      "icon": "build/icon.png",
+      "maintainer": "NOUVO POS Team",
+      "syncDesktopName": true
     }
   },
   "dependencies": {

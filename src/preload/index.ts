@@ -42,7 +42,18 @@ const api: NouvoApi = Object.freeze({
   listCashierSessions: () => ipcRenderer.invoke('cash-session:list-history'),
   listAccountingAccounts: () => ipcRenderer.invoke('accounting:list-accounts'),
   listAccountingJournals: () => ipcRenderer.invoke('accounting:list-journals'),
+  getAccountingTrialBalance: (asOfDate: string) =>
+    ipcRenderer.invoke('accounting:get-trial-balance', asOfDate),
+  getAccountingIncomeStatement: (input: { startDate: string; endDate: string }) =>
+    ipcRenderer.invoke('accounting:get-income-statement', input),
+  postManualAccountingJournal: (input: Parameters<NouvoApi['postManualAccountingJournal']>[0]) =>
+    ipcRenderer.invoke('accounting:post-manual-journal', input),
+  reverseManualAccountingJournal: (
+    input: Parameters<NouvoApi['reverseManualAccountingJournal']>[0],
+  ) => ipcRenderer.invoke('accounting:reverse-manual-journal', input),
   getSyncOverview: () => ipcRenderer.invoke('sync:get-overview'),
+  getSyncConfiguration: () => ipcRenderer.invoke('sync:get-configuration'),
+  saveSyncConfiguration: (input: unknown) => ipcRenderer.invoke('sync:save-configuration', input),
   retryFailedSyncEvents: () => ipcRenderer.invoke('sync:retry-failed'),
   runSyncNow: () => ipcRenderer.invoke('sync:run-now'),
   openCashierSession: (input: OpenCashierSessionInput) =>

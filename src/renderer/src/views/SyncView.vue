@@ -6,6 +6,15 @@ const overview = ref<SyncOverview | null>(null);
 const loading = ref(false);
 const actionError = ref('');
 const notice = ref('');
+const configLoading = ref(false);
+const configSaving = ref(false);
+const serverUrl = ref('');
+const storeId = ref('');
+const counterId = ref('');
+const counterToken = ref('');
+const secureStorageAvailable = ref(false);
+const configError = ref('');
+const configNotice = ref('');
 const statusLabels: Record<SyncOverview['status'], string> = {
   not_configured: 'Not configured',
   idle: 'Waiting to sync',
@@ -18,6 +27,45 @@ function formatDate(value: string | null): string {
   if (!value) return 'Never';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+async function loadConfiguration(): Promise<void> {
+  configLoading.value = true;
+  configError.value = '';
+  try {
+    const configuration = await window.nouvo.getSyncConfiguration();
+    serverUrl.value = configuration.url;
+    storeId.value = configuration.storeId;
+    counterId.value = configuration.counterId;
+    secureStorageAvailable.value = configuration.secureStorageAvailable;
+  } catch (error) {
+    configError.value =
+      error instanceof Error ? error.message : 'Could not load sync configuration.';
+  } finally {
+    configLoading.value = false;
+  }
+}
+async function saveConfiguration(): Promise<void> {
+  configSaving.value = true;
+  configError.value = '';
+  configNotice.value = '';
+  try {
+    const configuration = await window.nouvo.saveSyncConfiguration({
+      url: serverUrl.value,
+      token: counterToken.value,
+    });
+    serverUrl.value = configuration.url;
+    storeId.value = configuration.storeId;
+    counterId.value = configuration.counterId;
+    secureStorageAvailable.value = configuration.secureStorageAvailable;
+    counterToken.value = '';
+    configNotice.value = 'Sync configuration saved securely. A sync attempt has started.';
+    await refresh();
+  } catch (error) {
+    configError.value =
+      error instanceof Error ? error.message : 'Could not save sync configuration.';
+  } finally {
+    configSaving.value = false;
+  }
 }
 async function refresh(): Promise<void> {
   loading.value = true;
@@ -62,6 +110,7 @@ async function retryFailed(): Promise<void> {
 }
 onMounted(() => {
   void refresh();
+  void loadConfiguration();
 });
 </script>
 
@@ -95,6 +144,72 @@ onMounted(() => {
         </button>
       </div>
     </header>
+    <section class="sync-config-panel">
+      <div class="sync-events__header">
+        <div>
+          <h2>Central server connection</h2>
+          <p>Configure the HTTPS API URL and this counter's unique token.</p>
+        </div>
+        <span>{{
+          secureStorageAvailable ? 'OS secure storage available' : 'Secure storage unavailable'
+        }}</span>
+      </div>
+      <p v-if="!secureStorageAvailable" class="sync-alert sync-alert--error" role="alert">
+        Saved tokens require operating-system secure storage. On this device, use environment
+        configuration or enable OS keyring support before saving credentials.
+      </p>
+      <div class="sync-identity-grid">
+        <label>
+          <span>Local store UUID</span>
+          <input :value="storeId" readonly @focus="($event.target as HTMLInputElement).select()" />
+        </label>
+        <label>
+          <span>This counter UUID</span>
+          <input
+            :value="counterId"
+            readonly
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+        </label>
+      </div>
+      <p class="sync-muted">
+        Use these exact IDs when provisioning this store and counter on the central server.
+      </p>
+      <form class="sync-config-form" @submit.prevent="saveConfiguration">
+        <label>
+          <span>Central sync API URL</span>
+          <input
+            v-model.trim="serverUrl"
+            type="url"
+            placeholder="https://sync.example.com"
+            required
+            :disabled="configLoading || configSaving"
+            autocomplete="url"
+          />
+        </label>
+        <label>
+          <span>Counter token</span>
+          <input
+            v-model="counterToken"
+            type="password"
+            placeholder="Paste the token provisioned for this counter"
+            :required="!overview?.configured"
+            :disabled="configLoading || configSaving"
+            autocomplete="new-password"
+          />
+          <small>Leave blank to keep the saved token.</small>
+        </label>
+        <button
+          type="submit"
+          class="sync-button"
+          :disabled="configLoading || configSaving || !secureStorageAvailable"
+        >
+          {{ configSaving ? 'Saving…' : 'Save connection' }}
+        </button>
+      </form>
+      <p v-if="configError" class="sync-alert sync-alert--error" role="alert">{{ configError }}</p>
+      <p v-if="configNotice" class="sync-alert" role="status">{{ configNotice }}</p>
+    </section>
     <p v-if="actionError" class="sync-alert sync-alert--error" role="alert">{{ actionError }}</p>
     <p v-if="notice" class="sync-alert" role="status">{{ notice }}</p>
     <div v-if="overview" class="sync-status-strip">
@@ -104,7 +219,7 @@ onMounted(() => {
         ><small>{{
           overview.configured
             ? 'Server URL and token are configured'
-            : 'Set NOUVO_SYNC_URL and NOUVO_SYNC_TOKEN to enable remote delivery'
+            : 'Configure the central API URL and counter token above to enable remote delivery'
         }}</small>
       </div>
       <button

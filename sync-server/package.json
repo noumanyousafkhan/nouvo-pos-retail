@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json",
     "provision-counter": "tsx src/provision-counter.ts",
-    "test": "vitest run"
+    "test": "npm run test:integration",
+    "test:integration": "bash tests/smoke-sync-server.sh"
   },
   "dependencies": {
     "pg": "^8.16.3",

@@ -28,17 +28,54 @@ describe('sync worker HTTP delivery', () => {
       .prepare('INSERT INTO counters (id, store_id, name) VALUES (?, ?, ?)')
       .run(counterId, storeId, 'Counter 1');
     const eventId = randomUUID();
+    const snapshotProductId = randomUUID();
+    const snapshotTime = new Date().toISOString();
     database.connection
       .prepare(
         'INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, ?, ?, ?, ?)',
       )
       .run(eventId, 'sale.completed', 'sale', randomUUID(), JSON.stringify({ totalMinor: 2500 }));
     const server = createServer(async (request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      if (request.method === 'GET' && request.url === '/api/v1/sync/snapshot') {
+        expect(request.headers.authorization).toBe(
+          'Bearer test-counter-token-0123456789-abcdefghij',
+        );
+        expect(request.headers['x-counter-id']).toBe(counterId);
+        response.end(
+          JSON.stringify({
+            storeId,
+            counterId,
+            settings: null,
+            products: [
+              {
+                id: snapshotProductId,
+                name: 'Synchronized Product',
+                description: '',
+                categoryName: 'Grocery',
+                sku: 'SYNC-1',
+                barcodes: ['1234567890'],
+                baseUnit: 'piece',
+                purchaseCostMinor: 100,
+                sellingPriceMinor: 200,
+                taxRateBasisPoints: 0,
+                isActive: true,
+                stockOnHandMilli: 0,
+                createdAt: snapshotTime,
+                updatedAt: snapshotTime,
+              },
+            ],
+            allocations: [{ productId: snapshotProductId, quantityMilli: 3000 }],
+            generatedAt: snapshotTime,
+          }),
+        );
+        return;
+      }
       let raw = '';
       for await (const chunk of request) raw += chunk.toString();
       expect(request.method).toBe('POST');
       expect(request.url).toBe('/api/v1/sync/events');
-      expect(request.headers.authorization).toBe('Bearer test-counter-token');
+      expect(request.headers.authorization).toBe('Bearer test-counter-token-0123456789-abcdefghij');
       const body = JSON.parse(raw) as {
         schemaVersion: number;
         storeId: string;
@@ -49,7 +86,6 @@ describe('sync worker HTTP delivery', () => {
       expect(body.storeId).toBe(storeId);
       expect(body.counterId).toBe(counterId);
       expect(body.events[0]).toMatchObject({ id: eventId, payload: { totalMinor: 2500 } });
-      response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ acceptedEventIds: [eventId], rejectedEvents: [] }));
     });
     servers.push(server);
@@ -60,7 +96,7 @@ describe('sync worker HTTP delivery', () => {
     const service = new SyncService(database.connection, storeId, counterId);
     const worker = new SyncWorker(service, {
       NOUVO_SYNC_URL: 'http://127.0.0.1:' + address.port,
-      NOUVO_SYNC_TOKEN: 'test-counter-token',
+      NOUVO_SYNC_TOKEN: 'test-counter-token-0123456789-abcdefghij',
     });
     service.initialize(worker.configured);
     expect(worker.configured).toBe(true);
@@ -71,6 +107,23 @@ describe('sync worker HTTP delivery', () => {
       inFlightCount: 0,
       acknowledgedCount: 1,
     });
+    expect(
+      database.connection.prepare('SELECT name FROM products WHERE id=?').get(snapshotProductId),
+    ).toEqual({ name: 'Synchronized Product' });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS quantity FROM counter_stock_allocations WHERE counter_id=? AND product_id=?',
+        )
+        .get(counterId, snapshotProductId),
+    ).toEqual({ quantity: 3000 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT COALESCE(SUM(quantity_delta_milli),0) AS quantity FROM stock_movements WHERE counter_id=? AND product_id=?',
+        )
+        .get(counterId, snapshotProductId),
+    ).toEqual({ quantity: 3000 });
     worker.stop();
   });
 });

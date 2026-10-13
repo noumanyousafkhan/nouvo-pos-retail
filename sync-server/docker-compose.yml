@@ -9,7 +9,7 @@ services:
     volumes:
       - nouvo_sync_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nouvo_sync -d nouvo_sync"]
+      test: ['CMD-SHELL', 'pg_isready -U nouvo_sync -d nouvo_sync']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -18,11 +18,12 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: "8787"
+      PORT: '8787'
       DATABASE_URL: postgres://nouvo_sync:${POSTGRES_PASSWORD}@postgres:5432/nouvo_sync
       HOST: 0.0.0.0
+      SYNC_ADMIN_TOKEN: ${SYNC_ADMIN_TOKEN:-}
     ports:
-      - "8787:8787"
+      - '127.0.0.1:8787:8787'
     depends_on:
       postgres:
         condition: service_healthy

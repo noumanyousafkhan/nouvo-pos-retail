@@ -166,6 +166,37 @@ describe('checkout service', () => {
     ).toThrow(/already used for a different sale/i);
   });
 
+  it('blocks sales beyond the counter allocation and consumes allocation atomically', () => {
+    const { database, productId, counterId, service } = setup();
+    database.connection
+      .prepare(
+        "INSERT INTO sync_state (counter_id, status, allocation_enforced) VALUES (?, 'connected', 1)",
+      )
+      .run(counterId);
+    database.connection
+      .prepare(
+        'INSERT INTO counter_stock_allocations (counter_id, product_id, remaining_quantity_milli) VALUES (?, ?, ?)',
+      )
+      .run(counterId, productId, 1000);
+    expect(() => service.complete(request(productId))).toThrow(/allocated stock is insufficient/i);
+    expect(database.connection.prepare('SELECT COUNT(*) AS count FROM sales').get()).toEqual({
+      count: 0,
+    });
+    database.connection
+      .prepare(
+        'UPDATE counter_stock_allocations SET remaining_quantity_milli = 2000 WHERE counter_id = ? AND product_id = ?',
+      )
+      .run(counterId, productId);
+    service.complete(request(productId));
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS remaining FROM counter_stock_allocations WHERE counter_id = ? AND product_id = ?',
+        )
+        .get(counterId, productId),
+    ).toEqual({ remaining: 500 });
+  });
+
   it('rejects insufficient stock and mismatched payments without creating a sale', () => {
     const { database, productId, service } = setup();
     expect(() =>

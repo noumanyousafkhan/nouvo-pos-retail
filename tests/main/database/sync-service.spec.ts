@@ -75,6 +75,106 @@ describe('sync outbox service', () => {
     expect(service.getOverview(true)).toMatchObject({ failedCount: 0, pendingCount: 1 });
   });
 
+  it('applies a validated catalogue and allocation snapshot atomically', () => {
+    const { database, service } = setup();
+    service.initialize(true);
+    const productId = randomUUID();
+    const timestamp = new Date().toISOString();
+    service.applySnapshot({
+      storeId: service.storeId,
+      counterId: service.counterId,
+      generatedAt: timestamp,
+      settings: {
+        storeId: service.storeId,
+        name: 'Updated Sync Store',
+        currencyCode: 'PKR',
+        timezone: 'Asia/Karachi',
+        taxBehavior: 'inclusive',
+        address: 'Market Road',
+        phone: '03001234567',
+        businessRegistrationNumber: 'REG-1',
+        receiptFooter: 'Thank you',
+        receiptPaperWidthMm: 58,
+      },
+      products: [
+        {
+          id: productId,
+          name: 'Rice 1kg',
+          description: 'Basmati rice',
+          categoryName: 'Grocery',
+          sku: 'RICE-1',
+          barcodes: ['1234567890123'],
+          baseUnit: 'piece',
+          purchaseCostMinor: 10000,
+          sellingPriceMinor: 15000,
+          taxRateBasisPoints: 0,
+          isActive: true,
+          stockOnHandMilli: 1000,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      allocations: [{ productId, quantityMilli: 2500 }],
+    });
+    expect(
+      database.connection
+        .prepare('SELECT name, selling_price_minor AS price FROM products WHERE id=?')
+        .get(productId),
+    ).toEqual({ name: 'Rice 1kg', price: 15000 });
+    expect(
+      database.connection
+        .prepare('SELECT barcode FROM product_barcodes WHERE product_id=?')
+        .get(productId),
+    ).toEqual({ barcode: '1234567890123' });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT remaining_quantity_milli AS quantity FROM counter_stock_allocations WHERE counter_id=? AND product_id=?',
+        )
+        .get(service.counterId, productId),
+    ).toEqual({ quantity: 2500 });
+    expect(
+      database.connection
+        .prepare('SELECT allocation_enforced AS enforced FROM sync_state WHERE counter_id=?')
+        .get(service.counterId),
+    ).toEqual({ enforced: 1 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT name, currency_code AS currencyCode, tax_behavior AS taxBehavior, receipt_paper_width_mm AS paperWidth FROM stores WHERE id=?',
+        )
+        .get(service.storeId),
+    ).toEqual({
+      name: 'Updated Sync Store',
+      currencyCode: 'PKR',
+      taxBehavior: 'inclusive',
+      paperWidth: 58,
+    });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT COALESCE(SUM(quantity_delta_milli), 0) AS quantity FROM stock_movements WHERE counter_id=? AND product_id=?',
+        )
+        .get(service.counterId, productId),
+    ).toEqual({ quantity: 2500 });
+  });
+
+  it('does not replace allocation snapshots while local events are unresolved', () => {
+    const { database, service } = setup();
+    service.initialize(true);
+    insertEvent(database);
+    expect(() =>
+      service.applySnapshot({
+        storeId: service.storeId,
+        counterId: service.counterId,
+        generatedAt: new Date().toISOString(),
+        settings: null,
+        products: [],
+        allocations: [],
+      }),
+    ).toThrow(/pending or failed/i);
+  });
+
   it('recovers events left in flight by an interrupted process', () => {
     const { database, service } = setup();
     const id = insertEvent(database);

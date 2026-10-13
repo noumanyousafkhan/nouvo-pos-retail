@@ -14,6 +14,7 @@ import { registerPurchasingIpcHandlers } from './ipc/register-purchasing-handler
 import { registerCashSessionIpcHandlers } from './ipc/register-cash-session-handlers';
 import { registerAccountingIpcHandlers } from './ipc/register-accounting-handlers';
 import { registerSyncIpcHandlers } from './ipc/register-sync-handlers';
+import { SyncConfigStore } from './sync/sync-config-store';
 import { SyncService } from './sync/sync-service';
 import { SyncWorker } from './sync/sync-worker';
 import { getLocalCounterId, getLocalDatabaseConnection, getLocalStoreId } from './database';
@@ -46,6 +47,7 @@ function createMainWindow(): void {
     minHeight: 700,
     show: false,
     backgroundColor: '#f5f7fb',
+    icon: join(__dirname, '../../build/icon.png'),
     title: 'NOUVO POS Cash & Carry',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -72,7 +74,7 @@ function createMainWindow(): void {
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     configureContentSecurityPolicy();
     try {
       initializeLocalDatabase();
@@ -86,9 +88,27 @@ app
         getLocalStoreId(),
         getLocalCounterId(),
       );
-      syncWorker = new SyncWorker(syncService);
+      const syncConfigStore = new SyncConfigStore(
+        join(app.getPath('userData'), 'sync-config.json'),
+      );
+      let syncEnvironment: NodeJS.ProcessEnv = process.env;
+      try {
+        const savedConfig = await syncConfigStore.load();
+        if (savedConfig)
+          syncEnvironment = {
+            ...process.env,
+            NOUVO_SYNC_URL: savedConfig.url,
+            NOUVO_SYNC_TOKEN: savedConfig.token,
+          };
+      } catch (error) {
+        logger.error(
+          { err: error },
+          'Saved sync configuration could not be loaded; using environment configuration',
+        );
+      }
+      syncWorker = new SyncWorker(syncService, syncEnvironment);
       syncWorker.start();
-      registerSyncIpcHandlers(syncService, syncWorker);
+      registerSyncIpcHandlers(syncService, syncWorker, syncConfigStore);
       registerAppIpcHandlers(() => {
         const overview = syncService.getOverview(syncWorker?.configured ?? false);
         if (overview.status === 'connected') return 'connected';

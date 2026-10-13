@@ -264,6 +264,27 @@ export class ReturnsService {
               `${input.operation === 'void' ? 'Voided sale' : 'Returned sale'} ${sale.receipt_number}: ${input.reason}`,
               this.actorUserId,
             );
+          const allocationMode = this.database
+            .prepare(
+              'SELECT allocation_enforced AS allocationEnforced FROM sync_state WHERE counter_id = ?',
+            )
+            .get(this.counterId) as { allocationEnforced: number } | undefined;
+          if (allocationMode?.allocationEnforced === 1) {
+            const restored = this.database
+              .prepare(
+                'UPDATE counter_stock_allocations SET remaining_quantity_milli = remaining_quantity_milli + ?, updated_at = ? WHERE counter_id = ? AND product_id = ?',
+              )
+              .run(
+                line.quantityMilli,
+                new Date().toISOString(),
+                this.counterId,
+                line.original.product_id,
+              );
+            if (Number(restored.changes) !== 1)
+              throw new Error(
+                'Returned stock could not be restored to the counter allocation. The return was rolled back.',
+              );
+          }
         }
       }
       if (totalMinor > 0)

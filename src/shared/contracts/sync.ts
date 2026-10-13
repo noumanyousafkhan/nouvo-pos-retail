@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { ProductSchema } from './products';
+import { BusinessSettingsSchema } from './settings';
 
 export const SyncEventSchema = z.object({
   id: z.string().uuid(),
@@ -41,10 +43,38 @@ export const SyncOverviewSchema = z.object({
   lastError: z.string().nullable(),
   events: z.array(SyncEventSummarySchema),
 });
+export const SyncSnapshotSchema = z.object({
+  storeId: z.string().uuid(),
+  counterId: z.string().uuid(),
+  products: z.array(ProductSchema),
+  allocations: z.array(
+    z.object({ productId: z.string().uuid(), quantityMilli: z.number().int().nonnegative() }),
+  ),
+  settings: BusinessSettingsSchema.nullable(),
+  generatedAt: z.string().datetime({ offset: true }),
+});
+export type SyncSnapshot = z.infer<typeof SyncSnapshotSchema>;
 export type SyncEvent = z.infer<typeof SyncEventSchema>;
 export type SyncOverview = z.infer<typeof SyncOverviewSchema>;
+export const SyncConfigurationSchema = z.object({
+  url: z.string(),
+  configured: z.boolean(),
+  secureStorageAvailable: z.boolean(),
+  storeId: z.string().uuid(),
+  counterId: z.string().uuid(),
+});
+export type SyncConfiguration = z.infer<typeof SyncConfigurationSchema>;
+export const SaveSyncConfigurationSchema = z
+  .object({
+    url: z.string().trim().min(1).max(500),
+    token: z.string().max(500).default(''),
+  })
+  .strict();
+export type SaveSyncConfiguration = z.infer<typeof SaveSyncConfigurationSchema>;
 export interface SyncApi {
   getSyncOverview(): Promise<SyncOverview>;
+  getSyncConfiguration(): Promise<SyncConfiguration>;
+  saveSyncConfiguration(input: SaveSyncConfiguration): Promise<SyncConfiguration>;
   retryFailedSyncEvents(): Promise<number>;
   runSyncNow(): Promise<SyncOverview>;
 }
