@@ -5,6 +5,7 @@ import type { StockMovementInput } from '../shared/contracts/stock';
 import type { CheckoutInput } from '../shared/contracts/checkout';
 import type { SalesListQuery } from '../shared/contracts/sales';
 import type { SaveBusinessSettings } from '../shared/contracts/settings';
+import type { BackupResult, RestoreResult } from '../shared/contracts/backup';
 
 const api: NouvoApi = Object.freeze({
   getAppInfo: () => ipcRenderer.invoke('app:get-info', {}),
@@ -22,6 +23,8 @@ const api: NouvoApi = Object.freeze({
   getBusinessSettings: () => ipcRenderer.invoke('settings:get-business'),
   saveBusinessSettings: (input: SaveBusinessSettings) =>
     ipcRenderer.invoke('settings:save-business', input),
+  createBackup: (): Promise<BackupResult | null> => ipcRenderer.invoke('backup:create'),
+  restoreBackup: (): Promise<RestoreResult | null> => ipcRenderer.invoke('backup:restore'),
 });
 
 contextBridge.exposeInMainWorld('nouvo', api);

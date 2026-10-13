@@ -218,6 +218,8 @@ export const migrations: Migration[] = [
   },
 ];
 
+export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;
+
 export function migrationChecksum(migration: Migration): string {
   return createHash('sha256').update(migration.sql).digest('hex');
 }

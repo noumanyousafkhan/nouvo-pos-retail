@@ -9,6 +9,10 @@ const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
+const backupMessage = ref('');
+const backupError = ref('');
+const backupBusy = ref(false);
+const restoreBusy = ref(false);
 const form = reactive({
   name: 'My Store',
   currencyCode: 'PKR',
@@ -35,6 +39,43 @@ async function loadSettings() {
       error instanceof Error ? error.message : 'Business settings could not be loaded.';
   } finally {
     loading.value = false;
+  }
+}
+
+async function createBackup() {
+  backupBusy.value = true;
+  backupError.value = '';
+  backupMessage.value = '';
+  try {
+    const result = await window.nouvo.createBackup();
+    if (!result) return;
+    backupMessage.value = `Verified backup created. SHA-256: ${result.sha256}. File size: ${(result.sizeBytes / 1024 / 1024).toFixed(2)} MB. Saved to: ${result.filePath}`;
+  } catch (error) {
+    backupError.value = error instanceof Error ? error.message : 'Backup could not be created.';
+  } finally {
+    backupBusy.value = false;
+  }
+}
+
+async function restoreBackup() {
+  if (
+    !window.confirm(
+      'Restore will replace this counter’s current database. The app will create an automatic safety backup first. Continue only if you trust the selected file.',
+    )
+  )
+    return;
+  restoreBusy.value = true;
+  backupError.value = '';
+  backupMessage.value = '';
+  try {
+    const result = await window.nouvo.restoreBackup();
+    if (!result) return;
+    await loadSettings();
+    backupMessage.value = `Restore verified successfully (schema ${result.schemaVersion}). Automatic safety backup: ${result.automaticBackupPath}`;
+  } catch (error) {
+    backupError.value = error instanceof Error ? error.message : 'Backup could not be restored.';
+  } finally {
+    restoreBusy.value = false;
   }
 }
 
@@ -195,6 +236,63 @@ onMounted(loadSettings);
             />
           </label>
         </div>
+      </BaseCard>
+
+      <BaseCard class="settings-card settings-backup-card">
+        <header class="settings-card-header">
+          <span class="settings-icon settings-icon--backup">↻</span>
+          <div>
+            <h2>Backup and recovery</h2>
+            <p>Create a verified copy or restore a backup from this same store and counter.</p>
+          </div>
+        </header>
+        <div class="settings-backup-actions">
+          <div>
+            <strong>Create database backup</strong
+            ><small
+              >Checkpoint SQLite, export a consistent database file, then verify its integrity,
+              schema and SHA-256 checksum.</small
+            ><BaseButton
+              variant="secondary"
+              :loading="backupBusy"
+              :disabled="restoreBusy"
+              @click="createBackup"
+              >Create verified backup</BaseButton
+            >
+          </div>
+          <div>
+            <strong>Restore from backup</strong
+            ><small
+              >The selected backup must belong to this exact store and counter. An automatic safety
+              backup is made before replacing current data.</small
+            ><BaseButton
+              variant="secondary"
+              :loading="restoreBusy"
+              :disabled="backupBusy"
+              @click="restoreBackup"
+              >Choose backup to restore</BaseButton
+            >
+          </div>
+        </div>
+        <div
+          v-if="backupMessage"
+          class="inventory-alert inventory-alert--success settings-backup-result"
+          role="status"
+        >
+          {{ backupMessage }}
+        </div>
+        <div
+          v-if="backupError"
+          class="inventory-alert inventory-alert--error settings-backup-result"
+          role="alert"
+        >
+          {{ backupError }}
+        </div>
+        <p class="settings-warning">
+          <strong>Restore warning:</strong> This replaces all current local sales, stock movements
+          and settings with the selected backup. Do not close the application while restore is
+          running. Keep a copy of backups on a separate drive.
+        </p>
       </BaseCard>
 
       <div class="settings-actions">

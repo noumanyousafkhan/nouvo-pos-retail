@@ -12,6 +12,7 @@
 - `src/main/checkout/checkout-service.ts`: atomic sale completion, stock validation/deduction, payment splits/change, immutable line/receipt snapshots and idempotency keys.
 - `src/main/checkout/sales-service.ts`: counter-scoped sales search, date filters, receipt listing and detail retrieval.
 - `src/main/settings/settings-service.ts`: validated business identity, currency/timezone, tax behavior and receipt settings; each revision is audited and queued for sync.
+- `src/main/backup/backup-service.ts`: WAL checkpoint, verified backup file creation, SHA-256 metadata, store/counter identity validation and staged restore with an automatic pre-restore safety copy.
 - `src/renderer/src/components/sales/ReceiptPreview.vue`: shared receipt preview for checkout and sales history, with a standard system print dialog and 80 mm print CSS.
 - `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
@@ -35,6 +36,13 @@
 - Product creation/editing preserves transaction history. Archiving deactivates the row rather than deleting it. SKU and barcode conflicts return actionable errors.
 - Stock receipts, adjustments and write-offs are ledger entries, never direct quantity edits. Negative on-hand stock is blocked. Stock changes are audited and written to the sync outbox in the same transaction.
 - Base-unit changes are blocked after stock movements or sale lines exist; a dedicated controlled conversion workflow is required.
+
+## Backup and recovery
+
+- A backup is created only after a successful WAL checkpoint; the exported database is reopened and checked with `PRAGMA quick_check`, foreign-key validation, schema version and store/counter identity.
+- A SHA-256 checksum and file size are returned for the backup. Backups are not encrypted; store them in a controlled location or on a separate drive.
+- Restore rejects backups from a different store/counter or a newer incompatible schema. It creates an automatic safety backup, validates a staged copy, closes the live connection, replaces the database and reruns migrations/integrity checks.
+- If restore fails, the automatic safety copy is used to recover the prior database. The UI warns that restore replaces local records.
 
 ## Checkout rules
 

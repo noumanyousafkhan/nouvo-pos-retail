@@ -36,6 +36,11 @@ export function initializeLocalDatabase(): void {
   }
 }
 
+export function getLocalDatabasePath(): string {
+  if (!localDatabase) throw new Error('Local database is not available.');
+  return localDatabase.path;
+}
+
 export function getLocalDatabaseConnection() {
   if (!localDatabase)
     throw new Error(
