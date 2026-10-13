@@ -4,7 +4,7 @@ Offline-first Windows/Linux desktop POS built with Electron, Vue 3, TypeScript, 
 
 ## Current milestone
 
-**Phase 1 foundation is in progress.** The current UI and desktop bridge are scaffolding only. Checkout, inventory persistence, SQLite migrations, central synchronization, accounting, printing and backup/restore are not yet implemented. Do not use this build for real transactions.
+**Phase 2 local database foundation is implemented; the POS is still under development.** The Electron main process initializes a per-counter SQLite database, runs checksum-verified versioned migrations, enables foreign keys/WAL/FULL synchronous durability, and checks database integrity. The initial schema includes stores, counters, users, products/barcodes, stock movements, sales and immutable line snapshots, payments, an outbox, branding revisions, and audit events. Checkout workflows, inventory repositories/UI, authentication/authorization, central synchronization, accounting, printing and backup/restore are not yet implemented. Do not use this build for real transactions.
 
 ## Requirements
 
@@ -44,8 +44,17 @@ Electron Builder targets Windows NSIS and Linux AppImage/DEB. Actual platform-sp
 - Renderer IPC is exposed only through the narrow preload API.
 - IPC payloads and returned contracts are validated with Zod.
 - Logs are written under Electron's managed logs directory and redact common secret fields.
-- SQLite driver selection is intentionally pending Electron/native-module compatibility verification.
+- The initial implementation uses Node’s built-in `node:sqlite` API; it has been smoke-tested inside Electron 44 on Linux. Node currently marks this API experimental, so selecting a stable native driver remains a release gate; evaluate `better-sqlite3` and verify native rebuilds for both Windows and Linux before production release.
 - Do not commit credentials, real customer data, local databases or release artifacts.
+
+## Current implementation milestone
+
+- Local database path: Electron-managed user data directory at `data/counter.sqlite` (one file per counter/device).
+- Migration 1 is checksum-verified; modified historical migration SQL causes startup to fail rather than silently drift the schema.
+- Transaction helper uses `BEGIN IMMEDIATE` and rollback-on-error.
+- Automated tests cover migration idempotency, persistence across close/reopen, rollback, foreign-key/barcode constraints, and migration checksum tampering.
+- Verified on the development machine: typecheck, 11 unit tests, lint, production build, and Electron runtime database initialization.
+- Remaining gates: stable SQLite driver decision, normal sandboxed launch, Windows/Linux packaging, and business feature implementation.
 
 ## Requirements documents
 

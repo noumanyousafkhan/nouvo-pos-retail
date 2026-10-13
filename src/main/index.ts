@@ -2,6 +2,7 @@ import { app, BrowserWindow, session } from 'electron';
 import { join } from 'node:path';
 import { logger } from './services/logger';
 import { registerAppIpcHandlers } from './ipc/register-app-handlers';
+import { closeLocalDatabase, initializeLocalDatabase } from './database';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -58,6 +59,11 @@ app
   .whenReady()
   .then(() => {
     configureContentSecurityPolicy();
+    try {
+      initializeLocalDatabase();
+    } catch {
+      // Keep the shell available so the UI can report the database failure and recovery guidance.
+    }
     registerAppIpcHandlers();
     createMainWindow();
     app.on('activate', () => {
@@ -68,6 +74,10 @@ app
     logger.fatal({ err: error }, 'Application startup failed');
     app.quit();
   });
+
+app.on('before-quit', () => {
+  closeLocalDatabase();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

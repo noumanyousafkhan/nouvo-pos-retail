@@ -3,25 +3,26 @@
 **Baseline:** SRS v1.1  
 **Purpose:** Tie requirements to implementation and test evidence. Never record a test as passing unless it has actually run.
 
-| Requirement area              | SRS section | Implementation location                                     | Verification evidence                                    |
-| ----------------------------- | ----------: | ----------------------------------------------------------- | -------------------------------------------------------- |
-| Secure desktop foundation     |      13, 15 | `src/main`, `src/preload`, `src/shared/contracts`           | IPC contract tests, security review, typecheck and build |
-| Renderer shell and navigation |      14, 15 | `src/renderer/src/layouts`, `components/layout`, `router`   | Vue component tests and renderer build                   |
-| Reusable UI and design tokens |  14; UX-001 | `src/renderer/src/components/base`, `styles/main.css`       | Component tests, visual review, lint                     |
-| Product create/edit/archive   |           6 | Planned: inventory feature and main domain services         | CRUD, uniqueness and audit tests                         |
-| Price history and snapshots   |        6, 8 | Planned: inventory and sales domain services                | Old sale remains unchanged after price edit              |
-| Stock movement and adjustment |       6, 10 | Planned: inventory/stock services and database repositories | Permissions, balance and audit tests                     |
-| Offline local checkout        |       7, 11 | Planned: checkout service, SQLite repositories, outbox      | Offline/restart persistence tests                        |
-| Stock allocations             |          11 | Planned: central service and local stock allocation service | Concurrent allocation/oversell tests                     |
-| Idempotent synchronization    |          11 | Planned: central sync module and local outbox               | Duplicate/retry/restart tests                            |
-| Payments and cashier sessions |           8 | Planned: payments and cashier-session services              | Split-payment and cash-variance tests                    |
-| Business branding             | 9; addendum | Planned: branding module and receipt profile repository     | BR-001 to BR-010                                         |
-| Receipt layout and reprints   |        8, 9 | Planned: receipt renderer and snapshot service              | AT-015, AT-016, AT-022                                   |
-| Accounting                    |          12 | Planned: accounting domain and posting matrix               | Debit/credit balancing tests                             |
-| Permissions and audit         |       4, 13 | Shared authorization and audit services (planned)           | Unauthorized-operation and audit tests                   |
-| Backup and migrations         |          17 | Planned: database migrations and backup service             | Restore integrity and interruption tests                 |
-| Performance and accessibility |      14, 18 | Renderer components and profiling suite (incremental)       | UX-002 to UX-004; AT-023 to AT-028                       |
-| Windows/Linux delivery        |      15, 17 | Electron Builder configuration                              | Actual target-platform install/update tests              |
+| Requirement area              | SRS section | Implementation location                                     | Verification evidence                                                             |
+| ----------------------------- | ----------: | ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Secure desktop foundation     |      13, 15 | `src/main`, `src/preload`, `src/shared/contracts`           | IPC contract tests, security review, typecheck and build                          |
+| Renderer shell and navigation |      14, 15 | `src/renderer/src/layouts`, `components/layout`, `router`   | Vue component tests and renderer build                                            |
+| Reusable UI and design tokens |  14; UX-001 | `src/renderer/src/components/base`, `styles/main.css`       | Component tests, visual review, lint                                              |
+| Product create/edit/archive   |           6 | Planned: inventory feature and main domain services         | CRUD, uniqueness and audit tests                                                  |
+| Price history and snapshots   |        6, 8 | Planned: inventory and sales domain services                | Old sale remains unchanged after price edit                                       |
+| Stock movement and adjustment |       6, 10 | Planned: inventory/stock services and database repositories | Permissions, balance and audit tests                                              |
+| Offline local checkout        |       7, 11 | Planned: checkout service, SQLite repositories, outbox      | Offline/restart persistence tests                                                 |
+| Stock allocations             |          11 | Planned: central service and local stock allocation service | Concurrent allocation/oversell tests                                              |
+| Idempotent synchronization    |          11 | Planned: central sync module and local outbox               | Duplicate/retry/restart tests                                                     |
+| Payments and cashier sessions |           8 | Planned: payments and cashier-session services              | Split-payment and cash-variance tests                                             |
+| Business branding             | 9; addendum | Planned: branding module and receipt profile repository     | BR-001 to BR-010                                                                  |
+| Receipt layout and reprints   |        8, 9 | Planned: receipt renderer and snapshot service              | AT-015, AT-016, AT-022                                                            |
+| Accounting                    |          12 | Planned: accounting domain and posting matrix               | Debit/credit balancing tests                                                      |
+| Permissions and audit         |       4, 13 | Shared authorization and audit services (planned)           | Unauthorized-operation and audit tests                                            |
+| Local schema and migrations   |      15, 17 | `src/main/database/connection.ts`, `migrations.ts`          | Migration idempotency/checksum, restart persistence, rollback and integrity tests |
+| Backup and restore            |          17 | Planned: backup service                                     | Restore integrity and interruption tests                                          |
+| Performance and accessibility |      14, 18 | Renderer components and profiling suite (incremental)       | UX-002 to UX-004; AT-023 to AT-028                                                |
+| Windows/Linux delivery        |      15, 17 | Electron Builder configuration                              | Actual target-platform install/update tests                                       |
 
 ## Phase 1 implementation checklist
 
@@ -47,6 +48,19 @@
 - [ ] Normal sandboxed Electron launch and packaged app launch still require verification on a desktop environment with correctly configured Linux sandbox-helper permissions.
 - [ ] Windows/Linux installer creation and in-place update tests remain pending.
 
+## Phase 2 local database checklist
+
+- [x] Local per-counter SQLite file under Electron-managed user data.
+- [x] Foreign-key enforcement, WAL mode, `synchronous=FULL`, busy timeout and `trusted_schema=OFF`.
+- [x] Versioned migration ledger with SHA-256 checksum verification and transactional application.
+- [x] Initial schema for stores, counters, users, categories, products, barcodes, stock movements, sales, sale-line snapshots, payments, outbox events, branding revisions and audit events.
+- [x] Synchronous transaction helper with rollback on failure.
+- [x] Quick integrity check when opening the database.
+- [x] Five database tests; total suite currently 11 tests.
+- [x] Electron 44 Linux smoke test created the database; application log confirmed initialization; `PRAGMA quick_check` returned `ok`.
+- [ ] Node `node:sqlite` remains experimental; evaluate stable native driver and test Electron rebuilds for Windows/Linux before production.
+- [ ] Database schema does not yet imply implemented checkout, inventory workflows, accounting, sync or backup features.
+
 ## Security audit note
 
 - `npm audit --omit=dev`: **0 vulnerabilities** in production dependencies at the last verification.
@@ -54,4 +68,4 @@
 
 ## Current status
 
-Phase 1 source foundation is implemented and the typecheck, unit tests, lint, formatting, production build, and development-runtime bridge smoke test have passed. This is not a production POS yet. SQLite driver selection, migrations, business domain services, checkout, inventory, central synchronization, accounting, branding, receipts, backup/restore, hardware and packaging still require implementation and acceptance testing.
+Phase 1 source foundation and Phase 2 local database foundation are implemented. Typecheck, 11 unit tests, lint, formatting, production build, and an Electron 44 Linux database initialization smoke test have passed. This is not a production POS yet. Stable SQLite driver selection, inventory services/UI, checkout, central synchronization, accounting, branding workflows, receipt printing, backup/restore, hardware and packaging still require implementation and acceptance testing.

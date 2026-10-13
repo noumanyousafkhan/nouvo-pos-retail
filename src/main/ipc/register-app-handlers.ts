@@ -1,5 +1,6 @@
 import { app, ipcMain } from 'electron';
 import { AppInfoSchema, EmptyPayloadSchema, RuntimeStatusSchema } from '../../shared/contracts/app';
+import { getLocalDatabaseStatus } from '../database';
 
 const appInfoChannel = 'app:get-info';
 const runtimeStatusChannel = 'app:get-runtime-status';
@@ -21,7 +22,7 @@ export function registerAppIpcHandlers(): void {
     EmptyPayloadSchema.parse(rawPayload ?? {});
     return RuntimeStatusSchema.parse({
       application: 'ready',
-      localDatabase: 'not-configured',
+      localDatabase: getLocalDatabaseStatus(),
       synchronization: 'not-configured',
     });
   });

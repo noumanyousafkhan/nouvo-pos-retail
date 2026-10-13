@@ -7,7 +7,7 @@
 - `src/main`: Electron lifecycle, IPC handlers, logging and privileged desktop integrations.
 - `src/shared`: schemas and types shared across trusted process boundaries.
 - `src/server`: reserved for the central Node.js/PostgreSQL service; not yet implemented.
-- `database`: reserved for local SQLite schemas, versioned migrations and repositories; native SQLite dependency is not selected yet.
+- `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle. Business repositories and domain services are added as separate modules. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
 
 ## Renderer organization
@@ -20,6 +20,15 @@
 - `composables`: reusable Vue behavior, not a home for business rules.
 - `services`: typed adapters to the preload bridge; no raw Electron IPC strings spread through screens.
 - `types` and `styles`: renderer type augmentation and design tokens.
+
+## Local persistence
+
+- Database file lives under Electron `userData/data/counter.sqlite`; never put it in the install directory or share the file over a network filesystem.
+- Configure foreign keys, WAL, `synchronous=FULL`, a bounded busy timeout, and `trusted_schema=OFF` on every connection.
+- Migrations are ordered, run inside `BEGIN IMMEDIATE`, and record SHA-256 checksums. Never edit an already released migration; add a new version instead.
+- Run `PRAGMA quick_check` at open and fail closed if integrity validation or migration fails.
+- Keep transaction callbacks synchronous; do not perform network calls or asynchronous work inside a SQLite transaction.
+- The first schema is a foundation, not proof that all POS business flows are implemented.
 
 ## Rules
 
