@@ -32,6 +32,7 @@ export default [
       'src/renderer/src/views/SetupView.vue',
       'src/renderer/src/views/ReportsView.vue',
       'src/renderer/src/views/PurchasingView.vue',
+      'src/renderer/src/views/CashSessionsView.vue',
       'src/renderer/src/components/sales/SaleReturnModal.vue',
       'src/renderer/src/components/sales/ReturnReceiptPreview.vue',
     ],

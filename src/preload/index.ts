@@ -9,6 +9,11 @@ import type { BackupResult, RestoreResult } from '../shared/contracts/backup';
 import type { ReportQuery } from '../shared/contracts/reports';
 import type { ReturnSaleInput, VoidSaleInput } from '../shared/contracts/returns';
 import type {
+  OpenCashierSessionInput,
+  CashMovementInput,
+  CloseCashierSessionInput,
+} from '../shared/contracts/cash-sessions';
+import type {
   PurchaseOrderInput,
   ReceivePurchaseOrderInput,
   SupplierInput,
@@ -33,6 +38,14 @@ const api: NouvoApi = Object.freeze({
   receivePurchaseOrder: (input: ReceivePurchaseOrderInput) =>
     ipcRenderer.invoke('purchasing:receive-order', input),
   cancelPurchaseOrder: (id: string) => ipcRenderer.invoke('purchasing:cancel-order', id),
+  getActiveCashierSession: () => ipcRenderer.invoke('cash-session:get-active'),
+  listCashierSessions: () => ipcRenderer.invoke('cash-session:list-history'),
+  openCashierSession: (input: OpenCashierSessionInput) =>
+    ipcRenderer.invoke('cash-session:open', input),
+  recordCashMovement: (input: CashMovementInput) =>
+    ipcRenderer.invoke('cash-session:record-movement', input),
+  closeCashierSession: (input: CloseCashierSessionInput) =>
+    ipcRenderer.invoke('cash-session:close', input),
   listProducts: (query?: Partial<ProductListQuery>) =>
     ipcRenderer.invoke('inventory:list-products', query ?? {}),
   saveProduct: (input: ProductInput) => ipcRenderer.invoke('inventory:save-product', input),

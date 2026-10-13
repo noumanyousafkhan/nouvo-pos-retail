@@ -46,6 +46,7 @@ describe('local SQLite database foundation', () => {
         { version: 4, name: 'authentication_and_role_permissions' },
         { version: 5, name: 'supplier_purchasing_and_receiving' },
         { version: 6, name: 'sale_returns_and_voids' },
+        { version: 7, name: 'cashier_shifts_and_reconciliation' },
       ]);
       expect(
         database.connection
@@ -55,7 +56,7 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 7 });
     } finally {
       database.close();
     }

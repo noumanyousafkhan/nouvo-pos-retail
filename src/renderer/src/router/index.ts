@@ -9,6 +9,7 @@ import SetupView from '@/views/SetupView.vue';
 import ForbiddenView from '@/views/ForbiddenView.vue';
 import ReportsView from '@/views/ReportsView.vue';
 import PurchasingView from '@/views/PurchasingView.vue';
+import CashSessionsView from '@/views/CashSessionsView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -84,6 +85,17 @@ export const router = createRouter({
         description: 'Suppliers, purchase orders and goods receiving.',
         module: 'Purchasing',
         permission: 'purchasing.view',
+      },
+    },
+    {
+      path: '/cash-sessions',
+      name: 'cash-sessions',
+      component: CashSessionsView,
+      meta: {
+        title: 'Cashier shifts',
+        description: 'Cash drawer, shift movements and reconciliation.',
+        module: 'Cash control',
+        permission: 'cash_session.view',
       },
     },
     {

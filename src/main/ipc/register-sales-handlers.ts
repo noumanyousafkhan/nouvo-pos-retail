@@ -26,6 +26,12 @@ export function registerSalesIpcHandlers(): void {
   ipcMain.handle(returnableItemsChannel, (_event, rawSaleId: unknown) => {
     const database = getLocalDatabaseConnection();
     const actor = requirePermission(database, 'sales.return');
+    if (
+      !database
+        .prepare("SELECT 1 FROM cashier_sessions WHERE counter_id = ? AND status = 'open'")
+        .get(getLocalCounterId())
+    )
+      throw new Error('Open a cashier shift before processing a return/refund.');
     return new ReturnsService(
       database,
       getLocalStoreId(),
@@ -37,6 +43,12 @@ export function registerSalesIpcHandlers(): void {
   ipcMain.handle(returnSaleChannel, (_event, rawInput: unknown) => {
     const database = getLocalDatabaseConnection();
     const actor = requirePermission(database, 'sales.return');
+    if (
+      !database
+        .prepare("SELECT 1 FROM cashier_sessions WHERE counter_id = ? AND status = 'open'")
+        .get(getLocalCounterId())
+    )
+      throw new Error('Open a cashier shift before processing a return/refund.');
     return new ReturnsService(
       database,
       getLocalStoreId(),

@@ -211,13 +211,18 @@ export class ReturnsService {
       }
       this.database
         .prepare(
-          "INSERT INTO sale_returns (id, store_id, counter_id, sale_id, return_number, operation, status, reason, currency_code, total_minor, processed_by_user_id) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)",
+          "INSERT INTO sale_returns (id, store_id, counter_id, sale_id, cashier_session_id, return_number, operation, status, reason, currency_code, total_minor, processed_by_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)",
         )
         .run(
           returnId,
           this.storeId,
           this.counterId,
           sale.id,
+          (
+            this.database
+              .prepare("SELECT id FROM cashier_sessions WHERE counter_id = ? AND status = 'open'")
+              .get(this.counterId) as { id: string } | undefined
+          )?.id ?? null,
           returnNumber,
           input.operation,
           input.reason,

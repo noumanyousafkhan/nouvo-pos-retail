@@ -193,14 +193,21 @@ export class CheckoutService {
         payments,
       };
 
+      const activeCashierSession = this.database
+        .prepare(
+          "SELECT id, opened_by_user_id FROM cashier_sessions WHERE counter_id = ? AND status = 'open'",
+        )
+        .get(this.counterId) as { id: string; opened_by_user_id: string } | undefined;
       this.database
         .prepare(
-          `INSERT INTO sales (id, store_id, counter_id, receipt_number, status, currency_code, subtotal_minor, discount_minor, tax_minor, total_minor, completed_at, idempotency_key, request_hash, change_due_minor) VALUES (?, ?, ?, ?, 'completed', ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO sales (id, store_id, counter_id, cashier_user_id, cashier_session_id, receipt_number, status, currency_code, subtotal_minor, discount_minor, tax_minor, total_minor, completed_at, idempotency_key, request_hash, change_due_minor) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           saleId,
           this.storeId,
           this.counterId,
+          activeCashierSession?.opened_by_user_id ?? null,
+          activeCashierSession?.id ?? null,
           receiptNumber,
           store.currency_code,
           subtotalMinor,

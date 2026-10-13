@@ -7,6 +7,8 @@ import ReceiptPreview from '@/components/sales/ReceiptPreview.vue';
 import type { Product } from '@shared/contracts/products';
 import type { SaleResult } from '@shared/contracts/checkout';
 import type { BusinessSettings } from '@shared/contracts/settings';
+import type { CashSession } from '@shared/contracts/cash-sessions';
+import { RouterLink } from 'vue-router';
 
 type CartLine = { product: Product; quantityMilli: number };
 type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'mobile_wallet' | 'other';
@@ -28,6 +30,7 @@ const loading = ref(false);
 const saving = ref(false);
 const paymentOpen = ref(false);
 const receipt = ref<SaleResult | null>(null);
+const activeCashierSession = ref<CashSession | null>(null);
 const errorMessage = ref('');
 const successMessage = ref('');
 const paymentLines = ref<PaymentLine[]>([]);
@@ -254,7 +257,18 @@ function closeReceipt() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProducts(), loadBusinessSettings()]);
+  await Promise.all([
+    loadProducts(),
+    loadBusinessSettings(),
+    window.nouvo
+      .getActiveCashierSession()
+      .then((session) => {
+        activeCashierSession.value = session;
+      })
+      .catch(() => {
+        activeCashierSession.value = null;
+      }),
+  ]);
   await nextTick();
   searchInput.value?.focus();
 });
@@ -267,6 +281,19 @@ onMounted(async () => {
       title="Checkout"
       description="Scan a barcode or search products, review the cart, then take payment."
     />
+    <div v-if="!activeCashierSession" class="checkout-shift-required" role="alert">
+      <span class="checkout-shift-required__icon" aria-hidden="true">₨</span>
+      <div>
+        <strong>Open a cashier shift before taking payments</strong>
+        <p>
+          Record the opening cash float first. Sales and refunds are attached to the active shift
+          for accurate drawer reconciliation.
+        </p>
+      </div>
+      <RouterLink to="/cash-sessions"
+        >Open cashier shift <span aria-hidden="true">→</span></RouterLink
+      >
+    </div>
     <div v-if="successMessage" class="inventory-alert inventory-alert--success" role="status">
       {{ successMessage }}
     </div>

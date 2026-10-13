@@ -9,6 +9,7 @@ const navigation = [
   { label: 'Overview', to: '/', icon: '◫', permission: 'dashboard.view' },
   { label: 'Checkout', to: '/checkout', icon: '▣', permission: 'checkout.use' },
   { label: 'Sales history', to: '/sales', icon: '▧', permission: 'sales.view' },
+  { label: 'Cashier shifts', to: '/cash-sessions', icon: '₨', permission: 'cash_session.view' },
   { label: 'Inventory', to: '/inventory', icon: '▤', permission: 'inventory.view' },
   { label: 'Purchasing', to: '/purchasing', icon: '⇄', permission: 'purchasing.view' },
   { label: 'Reports', to: '/reports', icon: '▥', permission: 'reports.view' },

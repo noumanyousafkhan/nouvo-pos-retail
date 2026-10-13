@@ -378,6 +378,57 @@ export const migrations: Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 7,
+    name: 'cashier_shifts_and_reconciliation',
+    sql: `
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','cash_session.view'),('owner','cash_session.open'),('owner','cash_session.close'),('owner','cash_session.movement'),('owner','cash_session.reconcile'),
+        ('manager','cash_session.view'),('manager','cash_session.open'),('manager','cash_session.close'),('manager','cash_session.movement'),('manager','cash_session.reconcile'),
+        ('cashier','cash_session.view'),('cashier','cash_session.open'),('cashier','cash_session.close'),('cashier','cash_session.movement'),('cashier','sales.return');
+
+      CREATE TABLE cashier_sessions (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        opened_by_user_id TEXT NOT NULL REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        closed_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+        opening_float_minor INTEGER NOT NULL CHECK (opening_float_minor >= 0),
+        expected_cash_minor INTEGER CHECK (expected_cash_minor >= 0),
+        counted_cash_minor INTEGER CHECK (counted_cash_minor >= 0),
+        variance_minor INTEGER,
+        opening_note TEXT,
+        closing_note TEXT,
+        opened_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        closed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        CHECK ((status = 'open' AND closed_at IS NULL AND counted_cash_minor IS NULL) OR (status = 'closed' AND closed_at IS NOT NULL AND counted_cash_minor IS NOT NULL AND expected_cash_minor IS NOT NULL AND variance_minor IS NOT NULL))
+      ) STRICT;
+      CREATE UNIQUE INDEX one_open_session_per_counter_idx ON cashier_sessions(counter_id) WHERE status = 'open';
+      CREATE INDEX cashier_sessions_store_time_idx ON cashier_sessions(store_id, opened_at DESC);
+      CREATE INDEX cashier_sessions_user_time_idx ON cashier_sessions(opened_by_user_id, opened_at DESC);
+
+      CREATE TABLE cash_movements (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        session_id TEXT NOT NULL REFERENCES cashier_sessions(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        movement_type TEXT NOT NULL CHECK (movement_type IN ('cash_in','cash_out')),
+        amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+        reason TEXT NOT NULL CHECK (length(trim(reason)) >= 3),
+        actor_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX cash_movements_session_time_idx ON cash_movements(session_id, created_at);
+
+      ALTER TABLE sales ADD COLUMN cashier_session_id TEXT REFERENCES cashier_sessions(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+      CREATE INDEX sales_cashier_session_idx ON sales(cashier_session_id, completed_at);
+      ALTER TABLE sale_returns ADD COLUMN cashier_session_id TEXT REFERENCES cashier_sessions(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+      CREATE INDEX sale_returns_cashier_session_idx ON sale_returns(cashier_session_id, created_at);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;
