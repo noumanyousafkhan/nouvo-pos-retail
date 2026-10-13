@@ -398,6 +398,13 @@ describe('purchasing service', () => {
       outstandingMinor: 0,
     });
     expect(service.listSupplierPayments()).toHaveLength(2);
+    expect(
+      database.connection
+        .prepare(
+          "SELECT a.code FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.source_type='supplier_payment' AND je.source_id=? AND jl.credit_minor>0",
+        )
+        .get(second.id),
+    ).toEqual({ code: '1012' });
     for (const payment of [first, second]) {
       expect(
         database.connection

@@ -72,7 +72,7 @@ describe('double-entry accounting postings', () => {
       database.connection
         .prepare('SELECT COUNT(*) AS count FROM accounts WHERE store_id = ?')
         .get(storeId),
-    ).toEqual({ count: 8 });
+    ).toEqual({ count: 12 });
     expect(new AccountingService(database.connection, storeId).postSale(sale.id)).toBeTypeOf(
       'string',
     );
@@ -83,6 +83,53 @@ describe('double-entry accounting postings', () => {
         )
         .get(sale.id),
     ).toEqual({ count: 1 });
+  });
+
+  it('posts each non-cash payment method to its own clearing account', () => {
+    const { database, storeId, counterId, productId } = setup();
+    const checkout = new CheckoutService(database.connection, storeId, counterId);
+    const sale = checkout.complete({
+      idempotencyKey: randomUUID(),
+      items: [{ productId, quantityMilli: 1000 }],
+      paymentLines: [{ paymentMethod: 'card', amountMinor: 1100 }],
+    });
+    const account = database.connection
+      .prepare(
+        "SELECT a.code, a.name FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id JOIN accounts a ON a.id=jl.account_id WHERE je.source_type='sale' AND je.source_id=? AND jl.debit_minor>0",
+      )
+      .get(sale.id);
+    expect(account).toMatchObject({ code: '1011', name: 'Card Payment Clearing' });
+
+    for (const [paymentMethod, expectedCode] of [
+      ['bank_transfer', '1012'],
+      ['mobile_wallet', '1013'],
+      ['other', '1019'],
+    ] as const) {
+      const next = checkout.complete({
+        idempotencyKey: randomUUID(),
+        items: [{ productId, quantityMilli: 1000 }],
+        paymentLines: [{ paymentMethod, amountMinor: 1100 }],
+      });
+      const mapped = database.connection
+        .prepare(
+          "SELECT a.code FROM journal_lines jl JOIN journal_entries je ON je.id=jl.journal_entry_id JOIN accounts a ON a.id=jl.account_id WHERE je.source_type='sale' AND je.source_id=? AND jl.debit_minor>0",
+        )
+        .get(next.id) as { code: string };
+      expect(mapped.code).toBe(expectedCode);
+      expect(journalTotals(database, 'sale', next.id)).toEqual({
+        debitMinor: 1600,
+        creditMinor: 1600,
+      });
+    }
+    expect(journalTotals(database, 'sale', sale.id)).toEqual({
+      debitMinor: 1600,
+      creditMinor: 1600,
+    });
+    expect(
+      new AccountingService(database.connection, storeId)
+        .listAccounts()
+        .some((a) => a.code === '1010' && a.name === 'Legacy Non-cash Payment Clearing'),
+    ).toBe(true);
   });
 
   it('returns a balanced trial balance and period income statement', () => {

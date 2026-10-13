@@ -11,26 +11,30 @@
 
 ## Default chart of accounts
 
-| Code | Account                      | Type           | Normal balance |
-| ---- | ---------------------------- | -------------- | -------------- |
-| 1000 | Cash on Hand                 | Asset          | Debit          |
-| 1010 | Non-cash Payment Clearing    | Asset          | Debit          |
-| 1200 | Inventory                    | Asset          | Debit          |
-| 2000 | Accounts Payable             | Liability      | Credit         |
-| 2100 | Sales Tax Payable            | Liability      | Credit         |
-| 4000 | Sales Revenue                | Income         | Credit         |
-| 4050 | Sales Returns and Allowances | Contra-revenue | Debit          |
-| 5000 | Cost of Goods Sold           | Expense        | Debit          |
+| Code | Account                                               | Type           | Normal balance |
+| ---- | ----------------------------------------------------- | -------------- | -------------- |
+| 1000 | Cash on Hand                                          | Asset          | Debit          |
+| 1010 | Legacy Non-cash Payment Clearing (historical entries) | Asset          | Debit          |
+| 1011 | Card Payment Clearing                                 | Asset          | Debit          |
+| 1012 | Bank Transfer Clearing                                | Asset          | Debit          |
+| 1013 | Mobile Wallet Clearing                                | Asset          | Debit          |
+| 1019 | Other Payment Clearing                                | Asset          | Debit          |
+| 1200 | Inventory                                             | Asset          | Debit          |
+| 2000 | Accounts Payable                                      | Liability      | Credit         |
+| 2100 | Sales Tax Payable                                     | Liability      | Credit         |
+| 4000 | Sales Revenue                                         | Income         | Credit         |
+| 4050 | Sales Returns and Allowances                          | Contra-revenue | Debit          |
+| 5000 | Cost of Goods Sold                                    | Expense        | Debit          |
 
 ## Posting matrix
 
-| Source event        | Debit                                                                                     | Credit                                                              | Notes                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Completed sale      | Cash on Hand for cash; Non-cash Payment Clearing for other payment methods                | Sales Revenue for net-of-tax sale amount; Sales Tax Payable for tax | Cash applied to the sale is used, not amount tendered; change due is excluded from drawer increase.                      |
-| Sale return or void | Sales Returns and Allowances for refund excluding tax; Sales Tax Payable for tax refunded | Cash on Hand for cash refund; Non-cash Payment Clearing otherwise   | Inventory is debited and COGS credited for returned quantities at the original recorded unit cost.                       |
-| Goods received      | Inventory                                                                                 | Accounts Payable                                                    | Received supplier invoice is recorded as a liability; invoice-level supplier payments debit AP and credit cash/clearing. |
-| Supplier return     | Accounts Payable                                                                          | Inventory                                                           | Return is limited to received quantity still on hand; zero-value returns have no monetary journal.                       |
-| Supplier payment    | Accounts Payable                                                                          | Cash (cash) / Non-cash Clearing (other methods)                     | Payment is linked to a received invoice and cannot exceed its remaining balance.                                         |
+| Source event        | Debit                                                                                               | Credit                                                                           | Notes                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Completed sale      | Cash on Hand for cash; method-specific card, bank-transfer, mobile-wallet or other clearing account | Sales Revenue for net-of-tax sale amount; Sales Tax Payable for tax              | Cash applied to the sale is used, not amount tendered; change due is excluded from drawer increase.                      |
+| Sale return or void | Sales Returns and Allowances for refund excluding tax; Sales Tax Payable for tax refunded           | Cash on Hand for cash refund; matching payment-method clearing account otherwise | Inventory is debited and COGS credited for returned quantities at the original recorded unit cost.                       |
+| Goods received      | Inventory                                                                                           | Accounts Payable                                                                 | Received supplier invoice is recorded as a liability; invoice-level supplier payments debit AP and credit cash/clearing. |
+| Supplier return     | Accounts Payable                                                                                    | Inventory                                                                        | Return is limited to received quantity still on hand; zero-value returns have no monetary journal.                       |
+| Supplier payment    | Accounts Payable                                                                                    | Cash (cash) / Non-cash Clearing (other methods)                                  | Payment is linked to a received invoice and cannot exceed its remaining balance.                                         |
 
 ## Ledger invariants
 
@@ -42,4 +46,4 @@
 
 ## Not yet covered
 
-Payment processor settlement, discounts, payment-method-specific clearing accounts, inventory adjustments, full indirect-method cash-flow statement, and accountant-approved tax/reporting rules. Manual journals/reversals, supplier returns, a posted-ledger balance sheet with retained earnings, and cash/clearing movement summary are implemented. The balance sheet exposes an out-of-balance flag rather than masking discrepancies. Weighted-average costing remains provisional: the existing product cost field is a current average estimate, not yet a full perpetual valuation ledger. The default account mappings and all tax assumptions require sign-off before production financial use.
+Payment processor settlement, discounts, inventory adjustments, full indirect-method cash-flow statement, and accountant-approved tax/reporting rules. Manual journals/reversals, supplier returns, a posted-ledger balance sheet with retained earnings, and cash/clearing movement summary are implemented. The balance sheet exposes an out-of-balance flag rather than masking discrepancies. Weighted-average costing remains provisional: the existing product cost field is a current average estimate, not yet a full perpetual valuation ledger. Non-cash sales/refunds and supplier payments now use method-specific clearing accounts; legacy 1010 is retained only for historical entries. The default account mappings and all tax assumptions require sign-off before production financial use.

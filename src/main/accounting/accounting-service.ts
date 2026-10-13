@@ -5,7 +5,19 @@ import type {
   ReverseManualJournalInput,
 } from '../../shared/contracts/accounting';
 
-type AccountCode = '1000' | '1010' | '1200' | '2000' | '2100' | '4000' | '4050' | '5000';
+type AccountCode =
+  | '1000'
+  | '1010'
+  | '1011'
+  | '1012'
+  | '1013'
+  | '1019'
+  | '1200'
+  | '2000'
+  | '2100'
+  | '4000'
+  | '4050'
+  | '5000';
 type JournalLineInput = {
   accountCode: AccountCode;
   debitMinor?: number;
@@ -19,7 +31,11 @@ const DEFAULT_ACCOUNTS: {
   normal: 'debit' | 'credit';
 }[] = [
   { code: '1000', name: 'Cash on Hand', type: 'asset', normal: 'debit' },
-  { code: '1010', name: 'Non-cash Payment Clearing', type: 'asset', normal: 'debit' },
+  { code: '1010', name: 'Legacy Non-cash Payment Clearing', type: 'asset', normal: 'debit' },
+  { code: '1011', name: 'Card Payment Clearing', type: 'asset', normal: 'debit' },
+  { code: '1012', name: 'Bank Transfer Clearing', type: 'asset', normal: 'debit' },
+  { code: '1013', name: 'Mobile Wallet Clearing', type: 'asset', normal: 'debit' },
+  { code: '1019', name: 'Other Payment Clearing', type: 'asset', normal: 'debit' },
   { code: '1200', name: 'Inventory', type: 'asset', normal: 'debit' },
   { code: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
   { code: '2100', name: 'Sales Tax Payable', type: 'liability', normal: 'credit' },
@@ -74,7 +90,7 @@ export class AccountingService {
       )
       .all(saleId) as { payment_method: string; amount_minor: number }[];
     const lines: JournalLineInput[] = payments.map((payment) => ({
-      accountCode: payment.payment_method.toLowerCase() === 'cash' ? '1000' : '1010',
+      accountCode: this.paymentAccountCode(payment.payment_method),
       debitMinor: payment.amount_minor,
       memo: `${payment.payment_method} payment for receipt ${sale.receipt_number}`,
     }));
@@ -159,7 +175,7 @@ export class AccountingService {
       });
     for (const payment of payments)
       lines.push({
-        accountCode: payment.payment_method.toLowerCase() === 'cash' ? '1000' : '1010',
+        accountCode: this.paymentAccountCode(payment.payment_method),
         creditMinor: payment.amount_minor,
         memo: `${payment.payment_method} refund ${ret.return_number}`,
       });
@@ -272,7 +288,7 @@ export class AccountingService {
       .prepare('SELECT currency_code FROM stores WHERE id=?')
       .get(this.storeId) as { currency_code: string } | undefined;
     if (!currency) throw new Error('Store currency is not configured.');
-    const creditAccount = payment.payment_method === 'cash' ? '1000' : '1010';
+    const creditAccount = this.paymentAccountCode(payment.payment_method);
     return this.postBalanced({
       sourceType: 'supplier_payment',
       sourceId: paymentId,
@@ -485,7 +501,7 @@ export class AccountingService {
     if (!currency) throw new Error('Store currency is not configured.');
     const rows = this.database
       .prepare(
-        "SELECT je.source_type AS sourceType, COALESCE(SUM(jl.debit_minor),0) AS inflow, COALESCE(SUM(jl.credit_minor),0) AS outflow FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.store_id=? AND a.store_id=? AND a.code IN ('1000','1010') AND substr(je.posted_at,1,10) BETWEEN ? AND ? GROUP BY je.source_type ORDER BY je.source_type",
+        "SELECT je.source_type AS sourceType, COALESCE(SUM(jl.debit_minor),0) AS inflow, COALESCE(SUM(jl.credit_minor),0) AS outflow FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.store_id=? AND a.store_id=? AND a.code IN ('1000','1010','1011','1012','1013','1019') AND substr(je.posted_at,1,10) BETWEEN ? AND ? GROUP BY je.source_type ORDER BY je.source_type",
       )
       .all(this.storeId, this.storeId, startDate, endDate) as {
       sourceType: string;
@@ -673,6 +689,25 @@ export class AccountingService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const date = new Date(value + 'T00:00:00Z');
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+
+  private paymentAccountCode(paymentMethod: string): AccountCode {
+    switch (paymentMethod.toLowerCase()) {
+      case 'cash':
+        return '1000';
+      case 'card':
+        return '1011';
+      case 'bank_transfer':
+      case 'bank':
+        return '1012';
+      case 'mobile_wallet':
+      case 'mobile':
+        return '1013';
+      case 'other':
+        return '1019';
+      default:
+        throw new Error(`Unsupported accounting payment method: ${paymentMethod}`);
+    }
   }
 
   private saleCost(saleId: string): number {
