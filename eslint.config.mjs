@@ -32,6 +32,8 @@ export default [
       'src/renderer/src/views/SetupView.vue',
       'src/renderer/src/views/ReportsView.vue',
       'src/renderer/src/views/PurchasingView.vue',
+      'src/renderer/src/components/sales/SaleReturnModal.vue',
+      'src/renderer/src/components/sales/ReturnReceiptPreview.vue',
     ],
     // Prettier formats wrapped inline Vue text differently from these template layout rules in the dense inventory, checkout, sales and settings templates.
     rules: {

@@ -7,6 +7,7 @@ import type { SalesListQuery } from '../shared/contracts/sales';
 import type { SaveBusinessSettings } from '../shared/contracts/settings';
 import type { BackupResult, RestoreResult } from '../shared/contracts/backup';
 import type { ReportQuery } from '../shared/contracts/reports';
+import type { ReturnSaleInput, VoidSaleInput } from '../shared/contracts/returns';
 import type {
   PurchaseOrderInput,
   ReceivePurchaseOrderInput,
@@ -42,6 +43,9 @@ const api: NouvoApi = Object.freeze({
   completeSale: (input: CheckoutInput) => ipcRenderer.invoke('checkout:complete-sale', input),
   listSales: (query?: Partial<SalesListQuery>) => ipcRenderer.invoke('sales:list', query ?? {}),
   getSale: (id: string) => ipcRenderer.invoke('sales:get', id),
+  getReturnableItems: (saleId: string) => ipcRenderer.invoke('sales:returnable-items', saleId),
+  returnSale: (input: ReturnSaleInput) => ipcRenderer.invoke('sales:return', input),
+  voidSale: (input: VoidSaleInput) => ipcRenderer.invoke('sales:void', input),
   getBusinessSettings: () => ipcRenderer.invoke('settings:get-business'),
   saveBusinessSettings: (input: SaveBusinessSettings) =>
     ipcRenderer.invoke('settings:save-business', input),

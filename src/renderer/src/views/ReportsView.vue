@@ -208,8 +208,9 @@ onMounted(loadReport);
       </BaseCard>
       <p class="reports-disclaimer">
         Stock value is an estimate using each product’s current purchase cost and this counter’s
-        stock ledger. It is not a posted accounting valuation. Returns, voids, supplier purchases
-        and accounting journals are not included until those workflows are implemented.
+        stock ledger. It is not a posted accounting valuation. Return refunds are deducted from net
+        sales and top-product totals; voided sales are excluded. Purchases are not integrated into
+        financial statements.
       </p>
     </template>
   </div>

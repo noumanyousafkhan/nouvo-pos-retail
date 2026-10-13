@@ -6,6 +6,10 @@ import PageHeader from '@/components/base/PageHeader.vue';
 import ReceiptPreview from '@/components/sales/ReceiptPreview.vue';
 import type { SaleListItem } from '@shared/contracts/sales';
 import type { SaleResult } from '@shared/contracts/checkout';
+import type { AuthState } from '@shared/contracts/auth';
+import type { SaleReturnResult } from '@shared/contracts/returns';
+import SaleReturnModal from '@/components/sales/SaleReturnModal.vue';
+import ReturnReceiptPreview from '@/components/sales/ReturnReceiptPreview.vue';
 
 const sales = ref<SaleListItem[]>([]);
 const search = ref('');
@@ -14,6 +18,10 @@ const toDate = ref('');
 const loading = ref(false);
 const errorMessage = ref('');
 const selectedSale = ref<SaleResult | null>(null);
+const authState = ref<AuthState | null>(null);
+const returningSale = ref<SaleResult | null>(null);
+const returnOperation = ref<'return' | 'void'>('return');
+const returnReceipt = ref<SaleReturnResult | null>(null);
 const totalListedMinor = computed(() =>
   sales.value.reduce((sum, sale) => sum + sale.totalMinor, 0),
 );
@@ -51,7 +59,32 @@ async function viewReceipt(sale: SaleListItem) {
   }
 }
 
-onMounted(loadSales);
+async function startReturn(sale: SaleListItem, operation: 'return' | 'void') {
+  errorMessage.value = '';
+  try {
+    selectedSale.value = null;
+    returnReceipt.value = null;
+    returningSale.value = await window.nouvo.getSale(sale.id);
+    returnOperation.value = operation;
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Original sale could not be loaded.';
+  }
+}
+function onReturnCompleted(result: SaleReturnResult) {
+  returningSale.value = null;
+  returnReceipt.value = result;
+  void loadSales();
+}
+async function initialize() {
+  try {
+    authState.value = await window.nouvo.getAuthState();
+  } catch {
+    authState.value = null;
+  }
+  await loadSales();
+}
+onMounted(initialize);
 </script>
 
 <template>
@@ -59,7 +92,7 @@ onMounted(loadSales);
     <PageHeader
       eyebrow="TRANSACTION RECORDS"
       title="Sales history"
-      description="Review completed counter sales and reopen saved receipt snapshots."
+      description="Review sales, issue permitted returns/refunds or voids, and reopen saved receipt snapshots."
     />
     <div v-if="errorMessage" class="inventory-alert inventory-alert--error" role="alert">
       {{ errorMessage }}
@@ -67,12 +100,12 @@ onMounted(loadSales);
 
     <div class="inventory-stats sales-history-stats">
       <BaseCard
-        ><span class="inventory-stat-label">Completed sales shown</span
+        ><span class="inventory-stat-label">Transactions shown</span
         ><strong>{{ sales.length }}</strong
         ><small>Most recent 200 matching transactions</small></BaseCard
       >
       <BaseCard
-        ><span class="inventory-stat-label">Sales total shown</span
+        ><span class="inventory-stat-label">Original totals shown</span
         ><strong>{{ formatMoney(totalListedMinor, sales[0]?.currencyCode ?? 'PKR') }}</strong
         ><small>Based on current filters</small></BaseCard
       >
@@ -145,9 +178,32 @@ onMounted(loadSales);
                 >
               </td>
               <td>
-                <button class="inventory-text-action" type="button" @click="viewReceipt(sale)">
-                  View receipt ↗
-                </button>
+                <div class="sales-history-actions">
+                  <button class="inventory-text-action" type="button" @click="viewReceipt(sale)">
+                    View receipt ↗
+                  </button>
+                  <button
+                    v-if="
+                      authState?.permissions.includes('sales.return') &&
+                      ['completed', 'partially_returned'].includes(sale.status)
+                    "
+                    class="inventory-text-action"
+                    type="button"
+                    @click="startReturn(sale, 'return')"
+                  >
+                    Return / refund
+                  </button>
+                  <button
+                    v-if="
+                      authState?.permissions.includes('sales.void') && sale.status === 'completed'
+                    "
+                    class="inventory-text-action sales-void-action"
+                    type="button"
+                    @click="startReturn(sale, 'void')"
+                  >
+                    Void sale
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -165,6 +221,18 @@ onMounted(loadSales);
       :sale="selectedSale"
       done-label="Close"
       @close="selectedSale = null"
+    />
+    <SaleReturnModal
+      v-if="returningSale"
+      :sale="returningSale"
+      :operation="returnOperation"
+      @close="returningSale = null"
+      @completed="onReturnCompleted"
+    />
+    <ReturnReceiptPreview
+      v-if="returnReceipt"
+      :result="returnReceipt"
+      @close="returnReceipt = null"
     />
   </div>
 </template>

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SaleResult } from './checkout';
+import type { ReturnsApi } from './returns';
 
 export const SalesListQuerySchema = z.object({
   search: z.string().trim().max(100).default(''),
@@ -28,7 +29,7 @@ export const SaleListSchema = z.array(SaleListItemSchema);
 export type SalesListQuery = z.infer<typeof SalesListQuerySchema>;
 export type SaleListItem = z.infer<typeof SaleListItemSchema>;
 
-export interface SalesApi {
+export interface SalesApi extends ReturnsApi {
   listSales(query?: Partial<SalesListQuery>): Promise<SaleListItem[]>;
   getSale(id: string): Promise<SaleResult>;
 }

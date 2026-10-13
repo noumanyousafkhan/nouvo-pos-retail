@@ -316,6 +316,68 @@ export const migrations: Migration[] = [
       CREATE INDEX purchase_order_lines_product_idx ON purchase_order_lines(product_id);
     `,
   },
+  {
+    version: 6,
+    name: 'sale_returns_and_voids',
+    sql: `
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','sales.return'),('owner','sales.void'),
+        ('manager','sales.return'),('manager','sales.void');
+
+      CREATE TABLE sale_returns (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        sale_id TEXT NOT NULL REFERENCES sales(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        return_number TEXT NOT NULL,
+        operation TEXT NOT NULL CHECK (operation IN ('return','void')),
+        status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','reversed')),
+        reason TEXT NOT NULL CHECK (length(trim(reason)) >= 3),
+        currency_code TEXT NOT NULL CHECK (length(currency_code) = 3),
+        total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+        processed_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (counter_id, return_number)
+      ) STRICT;
+      CREATE INDEX sale_returns_sale_time_idx ON sale_returns(sale_id, created_at DESC);
+      CREATE INDEX sale_returns_store_time_idx ON sale_returns(store_id, created_at DESC);
+
+      CREATE TABLE sale_return_lines (
+        id TEXT PRIMARY KEY,
+        sale_return_id TEXT NOT NULL REFERENCES sale_returns(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        original_sale_line_id TEXT NOT NULL REFERENCES sale_lines(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_id TEXT REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_name_snapshot TEXT NOT NULL,
+        unit_snapshot TEXT NOT NULL,
+        quantity_milli INTEGER NOT NULL CHECK (quantity_milli > 0),
+        refund_subtotal_minor INTEGER NOT NULL CHECK (refund_subtotal_minor >= 0),
+        refund_discount_minor INTEGER NOT NULL CHECK (refund_discount_minor >= 0),
+        refund_tax_minor INTEGER NOT NULL CHECK (refund_tax_minor >= 0),
+        refund_total_minor INTEGER NOT NULL CHECK (refund_total_minor >= 0),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX sale_return_lines_return_idx ON sale_return_lines(sale_return_id);
+      CREATE INDEX sale_return_lines_original_idx ON sale_return_lines(original_sale_line_id);
+
+      CREATE TABLE sale_return_payments (
+        id TEXT PRIMARY KEY,
+        sale_return_id TEXT NOT NULL REFERENCES sale_returns(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        payment_method TEXT NOT NULL CHECK (length(trim(payment_method)) > 0),
+        amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+        reference TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX sale_return_payments_return_idx ON sale_return_payments(sale_return_id);
+
+      CREATE TABLE return_receipt_snapshots (
+        id TEXT PRIMARY KEY,
+        sale_return_id TEXT NOT NULL UNIQUE REFERENCES sale_returns(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        business_profile_json TEXT NOT NULL CHECK (json_valid(business_profile_json)),
+        receipt_config_json TEXT NOT NULL CHECK (json_valid(receipt_config_json)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

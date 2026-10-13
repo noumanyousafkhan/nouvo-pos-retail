@@ -33,7 +33,7 @@ export const SalesReportSchema = z.object({
   byPaymentMethod: z.array(
     z.object({
       method: z.string(),
-      amountMinor: z.number().int().nonnegative(),
+      amountMinor: z.number().int(),
       paymentCount: z.number().int().nonnegative(),
     }),
   ),

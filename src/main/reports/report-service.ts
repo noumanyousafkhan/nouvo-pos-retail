@@ -15,20 +15,25 @@ export class ReportService {
 
   sales(rawQuery: unknown = {}): SalesReport {
     const query: ReportQuery = ReportQuerySchema.parse(rawQuery);
-    const clauses = ['store_id = ?', "status = 'completed'", 'completed_at IS NOT NULL'];
+    const clauses = [
+      's.store_id = ?',
+      "s.status IN ('completed','partially_returned','returned')",
+      's.completed_at IS NOT NULL',
+    ];
     const params: (string | number)[] = [this.storeId];
     if (query.fromDate) {
-      clauses.push('date(completed_at) >= ?');
+      clauses.push('date(s.completed_at) >= ?');
       params.push(query.fromDate);
     }
     if (query.toDate) {
-      clauses.push('date(completed_at) <= ?');
+      clauses.push('date(s.completed_at) <= ?');
       params.push(query.toDate);
     }
     const where = clauses.join(' AND ');
+    const refundAggregate = `SELECT sr.sale_id, SUM(sr.total_minor) AS refund_total_minor, COALESCE(SUM(rl.refund_subtotal_minor),0) AS refund_subtotal_minor, COALESCE(SUM(rl.refund_discount_minor),0) AS refund_discount_minor, COALESCE(SUM(rl.refund_tax_minor),0) AS refund_tax_minor FROM sale_returns sr LEFT JOIN sale_return_lines rl ON rl.sale_return_id = sr.id WHERE sr.status = 'completed' AND sr.operation = 'return' GROUP BY sr.sale_id`;
     const summary = this.database
       .prepare(
-        `SELECT COUNT(*) AS sale_count, COALESCE(SUM(subtotal_minor),0) AS subtotal_minor, COALESCE(SUM(discount_minor),0) AS discount_minor, COALESCE(SUM(tax_minor),0) AS tax_minor, COALESCE(SUM(total_minor),0) AS total_minor FROM sales WHERE ${where}`,
+        `SELECT COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.subtotal_minor - COALESCE(r.refund_subtotal_minor,0))),0) AS subtotal_minor, COALESCE(SUM(MAX(0, s.discount_minor - COALESCE(r.refund_discount_minor,0))),0) AS discount_minor, COALESCE(SUM(MAX(0, s.tax_minor - COALESCE(r.refund_tax_minor,0))),0) AS tax_minor, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN (${refundAggregate}) r ON r.sale_id = s.id WHERE ${where}`,
       )
       .get(...params) as {
       sale_count: number;
@@ -39,17 +44,21 @@ export class ReportService {
     };
     const daily = this.database
       .prepare(
-        `SELECT date(completed_at) AS date, COUNT(*) AS sale_count, COALESCE(SUM(total_minor),0) AS total_minor FROM sales WHERE ${where} GROUP BY date(completed_at) ORDER BY date DESC LIMIT 90`,
+        `SELECT date(s.completed_at) AS date, COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN (${refundAggregate}) r ON r.sale_id = s.id WHERE ${where} GROUP BY date(s.completed_at) ORDER BY date DESC LIMIT 90`,
       )
       .all(...params) as { date: string; sale_count: number; total_minor: number }[];
     const byPaymentMethod = this.database
       .prepare(
-        `SELECT p.payment_method AS method, COALESCE(SUM(p.amount_minor),0) AS amount_minor, COUNT(*) AS payment_count FROM sale_payments p JOIN sales s ON s.id = p.sale_id WHERE ${where.replaceAll('store_id', 's.store_id').replaceAll('status', 's.status').replaceAll('completed_at', 's.completed_at')} GROUP BY p.payment_method ORDER BY amount_minor DESC`,
+        `SELECT method, SUM(amount_minor) AS amount_minor, SUM(payment_count) AS payment_count FROM (SELECT p.payment_method AS method, SUM(p.amount_minor) AS amount_minor, COUNT(*) AS payment_count FROM sale_payments p JOIN sales s ON s.id = p.sale_id WHERE ${where} GROUP BY p.payment_method UNION ALL SELECT rp.payment_method AS method, -SUM(rp.amount_minor) AS amount_minor, COUNT(*) AS payment_count FROM sale_return_payments rp JOIN sale_returns sr ON sr.id = rp.sale_return_id JOIN sales s ON s.id = sr.sale_id WHERE sr.operation = 'return' AND sr.status = 'completed' AND ${where} GROUP BY rp.payment_method) GROUP BY method ORDER BY amount_minor DESC`,
       )
-      .all(...params) as { method: string; amount_minor: number; payment_count: number }[];
+      .all(...params, ...params) as {
+      method: string;
+      amount_minor: number;
+      payment_count: number;
+    }[];
     const topProducts = this.database
       .prepare(
-        `SELECT sl.product_name_snapshot AS product_name, COALESCE(SUM(sl.quantity_milli),0) AS quantity_milli, COALESCE(SUM(sl.line_total_minor),0) AS total_minor FROM sale_lines sl JOIN sales s ON s.id = sl.sale_id WHERE ${where.replaceAll('store_id', 's.store_id').replaceAll('status', 's.status').replaceAll('completed_at', 's.completed_at')} GROUP BY sl.product_name_snapshot ORDER BY total_minor DESC LIMIT 10`,
+        `SELECT sl.product_name_snapshot AS product_name, COALESCE(SUM(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0))),0) AS quantity_milli, COALESCE(SUM(MAX(0, sl.line_total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sale_lines sl JOIN sales s ON s.id = sl.sale_id LEFT JOIN (SELECT rl.original_sale_line_id, SUM(rl.quantity_milli) AS returned_quantity_milli, SUM(rl.refund_total_minor) AS refund_total_minor FROM sale_return_lines rl JOIN sale_returns sr ON sr.id = rl.sale_return_id WHERE sr.status = 'completed' AND sr.operation = 'return' GROUP BY rl.original_sale_line_id) r ON r.original_sale_line_id = sl.id WHERE ${where} GROUP BY sl.product_name_snapshot HAVING SUM(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0))) > 0 ORDER BY total_minor DESC LIMIT 10`,
       )
       .all(...params) as { product_name: string; quantity_milli: number; total_minor: number }[];
     const inventory = this.database

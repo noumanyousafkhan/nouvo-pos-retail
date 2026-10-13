@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openLocalDatabase } from '../../../src/main/database/connection';
 import { CheckoutService } from '../../../src/main/checkout/checkout-service';
+import { ReturnsService } from '../../../src/main/checkout/returns-service';
 import { StockService } from '../../../src/main/inventory/stock-service';
 import { ReportService } from '../../../src/main/reports/report-service';
 
@@ -13,12 +14,18 @@ function setup() {
   const storeId = randomUUID();
   const counterId = randomUUID();
   const productId = randomUUID();
+  const actorId = randomUUID();
   database.connection
     .prepare('INSERT INTO stores (id, name) VALUES (?, ?)')
     .run(storeId, 'Test Shop');
   database.connection
     .prepare('INSERT INTO counters (id, store_id, name) VALUES (?, ?, ?)')
     .run(counterId, storeId, 'Counter 1');
+  database.connection
+    .prepare(
+      "INSERT INTO users (id, store_id, username, display_name, password_hash, role) VALUES (?, ?, 'owner.reports', 'Report Owner', 'test-hash', 'owner')",
+    )
+    .run(actorId, storeId);
   database.connection
     .prepare(
       'INSERT INTO products (id, store_id, sku, name, purchase_cost_minor, selling_price_minor) VALUES (?, ?, ?, ?, ?, ?)',
@@ -36,6 +43,7 @@ function setup() {
     storeId,
     counterId,
     productId,
+    actorId,
     reports: new ReportService(database.connection, storeId, counterId),
   };
 }
@@ -73,6 +81,37 @@ describe('report service', () => {
       { productName: 'Rice 1kg', quantityMilli: 2000, totalMinor: 2000 },
     ]);
     expect(report.daily).toHaveLength(1);
+  });
+
+  it('deducts partial refunds from net sales, payment totals and product quantities', () => {
+    const { database, storeId, counterId, productId, actorId, reports } = setup();
+    const sale = new CheckoutService(database.connection, storeId, counterId).complete({
+      idempotencyKey: randomUUID(),
+      items: [{ productId, quantityMilli: 2000 }],
+      paymentLines: [{ paymentMethod: 'cash', amountMinor: 2000, amountTenderedMinor: 2000 }],
+    });
+    const lineId = (
+      database.connection.prepare('SELECT id FROM sale_lines WHERE sale_id = ?').get(sale.id) as {
+        id: string;
+      }
+    ).id;
+    new ReturnsService(database.connection, storeId, counterId, actorId).returnSale({
+      saleId: sale.id,
+      reason: 'One item returned',
+      items: [{ saleLineId: lineId, quantityMilli: 1000 }],
+      refundPaymentMethod: 'cash',
+    });
+    const report = reports.sales({
+      fromDate: sale.completedAt.slice(0, 10),
+      toDate: sale.completedAt.slice(0, 10),
+    });
+    expect(report).toMatchObject({ saleCount: 1, subtotalMinor: 1000, totalMinor: 1000 });
+    expect(report.byPaymentMethod).toEqual([
+      { method: 'cash', amountMinor: 1000, paymentCount: 2 },
+    ]);
+    expect(report.topProducts).toEqual([
+      { productName: 'Rice 1kg', quantityMilli: 1000, totalMinor: 1000 },
+    ]);
   });
 
   it('validates date range order and returns zero totals for empty periods', () => {
