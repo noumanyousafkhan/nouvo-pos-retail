@@ -27,11 +27,13 @@ export default [
       'src/renderer/src/views/CheckoutView.vue',
       'src/renderer/src/views/SalesHistoryView.vue',
       'src/renderer/src/components/sales/ReceiptPreview.vue',
+      'src/renderer/src/views/SettingsView.vue',
     ],
-    // Prettier formats wrapped inline Vue text differently from these template layout rules in the dense inventory, checkout and sales templates.
+    // Prettier formats wrapped inline Vue text differently from these template layout rules in the dense inventory, checkout, sales and settings templates.
     rules: {
       'vue/html-indent': 'off',
       'vue/multiline-html-element-content-newline': 'off',
+      'vue/attributes-order': 'off',
     },
   },
   {

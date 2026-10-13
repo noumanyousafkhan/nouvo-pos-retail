@@ -17,10 +17,10 @@ const selectedSale = ref<SaleResult | null>(null);
 const totalListedMinor = computed(() =>
   sales.value.reduce((sum, sale) => sum + sale.totalMinor, 0),
 );
-const formatMoney = (minor: number) =>
+const formatMoney = (minor: number, currencyCode = 'PKR') =>
   new Intl.NumberFormat('en-PK', {
     style: 'currency',
-    currency: 'PKR',
+    currency: currencyCode,
     minimumFractionDigits: 2,
   }).format(minor / 100);
 
@@ -73,7 +73,7 @@ onMounted(loadSales);
       >
       <BaseCard
         ><span class="inventory-stat-label">Sales total shown</span
-        ><strong>{{ formatMoney(totalListedMinor) }}</strong
+        ><strong>{{ formatMoney(totalListedMinor, sales[0]?.currencyCode ?? 'PKR') }}</strong
         ><small>Based on current filters</small></BaseCard
       >
       <BaseCard
@@ -132,7 +132,7 @@ onMounted(loadSales);
                   }}</span>
                 </div>
               </td>
-              <td class="inventory-price">{{ formatMoney(sale.totalMinor) }}</td>
+              <td class="inventory-price">{{ formatMoney(sale.totalMinor, sale.currencyCode) }}</td>
               <td>
                 <span
                   class="inventory-status"

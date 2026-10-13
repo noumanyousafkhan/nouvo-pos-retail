@@ -42,6 +42,7 @@ describe('local SQLite database foundation', () => {
       expect(versions).toEqual([
         { version: 1, name: 'initial_counter_schema' },
         { version: 2, name: 'sale_receipt_and_idempotency' },
+        { version: 3, name: 'business_and_receipt_settings' },
       ]);
       expect(
         database.connection
@@ -51,7 +52,7 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 2 });
+      ).toEqual({ count: 3 });
     } finally {
       database.close();
     }

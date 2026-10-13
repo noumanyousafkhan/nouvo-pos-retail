@@ -6,6 +6,7 @@ import PageHeader from '@/components/base/PageHeader.vue';
 import ReceiptPreview from '@/components/sales/ReceiptPreview.vue';
 import type { Product } from '@shared/contracts/products';
 import type { SaleResult } from '@shared/contracts/checkout';
+import type { BusinessSettings } from '@shared/contracts/settings';
 
 type CartLine = { product: Product; quantityMilli: number };
 type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'mobile_wallet' | 'other';
@@ -18,6 +19,8 @@ type PaymentLine = {
 };
 
 const products = ref<Product[]>([]);
+const currencyCode = ref('PKR');
+const taxBehavior = ref<'exclusive' | 'inclusive'>('exclusive');
 const cart = ref<CartLine[]>([]);
 const search = ref('');
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -33,7 +36,7 @@ let paymentLineKey = 1;
 const formatMoney = (minor: number) =>
   new Intl.NumberFormat('en-PK', {
     style: 'currency',
-    currency: 'PKR',
+    currency: currencyCode.value,
     minimumFractionDigits: 2,
   }).format(minor / 100);
 const moneyToMinor = (value: string) => {
@@ -41,15 +44,34 @@ const moneyToMinor = (value: string) => {
   return Number.isFinite(number) && number >= 0 ? Math.round((number + Number.EPSILON) * 100) : 0;
 };
 const cartCount = computed(() => cart.value.reduce((sum, line) => sum + line.quantityMilli, 0));
+function lineSubtotalMinor(line: CartLine): number {
+  const enteredPrice = Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000);
+  const tax =
+    taxBehavior.value === 'inclusive'
+      ? Math.round(
+          (enteredPrice * line.product.taxRateBasisPoints) /
+            (10000 + line.product.taxRateBasisPoints),
+        )
+      : Math.round((enteredPrice * line.product.taxRateBasisPoints) / 10000);
+  return taxBehavior.value === 'inclusive' ? enteredPrice - tax : enteredPrice;
+}
+function lineTaxMinor(line: CartLine): number {
+  const enteredPrice = Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000);
+  return taxBehavior.value === 'inclusive'
+    ? Math.round(
+        (enteredPrice * line.product.taxRateBasisPoints) /
+          (10000 + line.product.taxRateBasisPoints),
+      )
+    : Math.round((enteredPrice * line.product.taxRateBasisPoints) / 10000);
+}
+function lineTotalMinor(line: CartLine): number {
+  return taxBehavior.value === 'inclusive'
+    ? Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000)
+    : lineSubtotalMinor(line) + lineTaxMinor(line);
+}
 const cartTotals = computed(() => {
-  const subtotalMinor = cart.value.reduce(
-    (sum, line) => sum + Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000),
-    0,
-  );
-  const taxMinor = cart.value.reduce((sum, line) => {
-    const lineSubtotal = Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000);
-    return sum + Math.round((lineSubtotal * line.product.taxRateBasisPoints) / 10000);
-  }, 0);
+  const subtotalMinor = cart.value.reduce((sum, line) => sum + lineSubtotalMinor(line), 0);
+  const taxMinor = cart.value.reduce((sum, line) => sum + lineTaxMinor(line), 0);
   return { subtotalMinor, taxMinor, totalMinor: subtotalMinor + taxMinor };
 });
 const paymentAppliedMinor = computed(() =>
@@ -64,6 +86,17 @@ const canCompletePayment = computed(
     paymentRemainingMinor.value === 0 &&
     paymentLines.value.every((line) => moneyToMinor(line.amount) > 0),
 );
+
+async function loadBusinessSettings() {
+  try {
+    const settings: BusinessSettings = await window.nouvo.getBusinessSettings();
+    currencyCode.value = settings.currencyCode;
+    taxBehavior.value = settings.taxBehavior;
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Business settings could not be loaded.';
+  }
+}
 
 async function loadProducts() {
   loading.value = true;
@@ -221,7 +254,7 @@ function closeReceipt() {
 }
 
 onMounted(async () => {
-  await loadProducts();
+  await Promise.all([loadProducts(), loadBusinessSettings()]);
   await nextTick();
   searchInput.value?.focus();
 });
@@ -351,16 +384,7 @@ onMounted(async () => {
                     step="0.001"
                     :value="(line.quantityMilli / 1000).toString()"
                     @change="handleQuantityChange(line, $event)" /></label
-                ><strong>{{
-                  formatMoney(
-                    Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000) +
-                      Math.round(
-                        (Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000) *
-                          line.product.taxRateBasisPoints) /
-                          10000,
-                      ),
-                  )
-                }}</strong>
+                ><strong>{{ formatMoney(lineTotalMinor(line)) }}</strong>
               </div>
             </article>
           </div>
@@ -375,7 +399,8 @@ onMounted(async () => {
               <span>Subtotal</span><strong>{{ formatMoney(cartTotals.subtotalMinor) }}</strong>
             </div>
             <div>
-              <span>Tax</span><strong>{{ formatMoney(cartTotals.taxMinor) }}</strong>
+              <span>Tax {{ taxBehavior === 'inclusive' ? '(included)' : '' }}</span
+              ><strong>{{ formatMoney(cartTotals.taxMinor) }}</strong>
             </div>
             <div class="checkout-grand-total">
               <span>Total due</span><strong>{{ formatMoney(cartTotals.totalMinor) }}</strong>

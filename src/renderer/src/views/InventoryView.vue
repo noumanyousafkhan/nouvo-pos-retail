@@ -4,8 +4,10 @@ import BaseButton from '@/components/base/BaseButton.vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
 import type { Product } from '@shared/contracts/products';
+import type { BusinessSettings } from '@shared/contracts/settings';
 
 const products = ref<Product[]>([]);
+const currencyCode = ref('PKR');
 const search = ref('');
 const loading = ref(false);
 const saving = ref(false);
@@ -36,7 +38,7 @@ const activeCount = computed(() => products.value.filter((product) => product.is
 const formatMoney = (minor: number) =>
   new Intl.NumberFormat('en-PK', {
     style: 'currency',
-    currency: 'PKR',
+    currency: currencyCode.value,
     minimumFractionDigits: 2,
   }).format(minor / 100);
 const toMinor = (value: string) => {
@@ -199,7 +201,15 @@ async function archiveProduct(product: Product) {
   }
 }
 
-onMounted(loadProducts);
+onMounted(async () => {
+  try {
+    const settings: BusinessSettings = await window.nouvo.getBusinessSettings();
+    currencyCode.value = settings.currencyCode;
+  } catch {
+    /* product loading displays database errors */
+  }
+  await loadProducts();
+});
 </script>
 
 <template>

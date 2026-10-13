@@ -49,6 +49,28 @@ export class CheckoutService {
         return this.loadSale(prior.id);
       }
 
+      const store = this.database
+        .prepare(
+          'SELECT name, currency_code, timezone, tax_behavior, address, phone, business_registration_number, receipt_footer, receipt_paper_width_mm FROM stores WHERE id = ?',
+        )
+        .get(this.storeId) as
+        | {
+            name: string;
+            currency_code: string;
+            timezone: string;
+            tax_behavior: 'exclusive' | 'inclusive';
+            address: string | null;
+            phone: string | null;
+            business_registration_number: string | null;
+            receipt_footer: string;
+            receipt_paper_width_mm: 58 | 80;
+          }
+        | undefined;
+      if (!store)
+        throw new Error(
+          'Business settings were not found. Open Settings and verify the store profile.',
+        );
+
       const mergedItems = new Map<string, number>();
       for (const item of input.items)
         mergedItems.set(
@@ -80,15 +102,24 @@ export class CheckoutService {
             `Insufficient stock for ${product.name}. Available: ${(balance.quantity / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.base_unit}.`,
           );
 
-        const lineSubtotal = safeMinor(
+        const enteredPrice = safeMinor(
           (product.selling_price_minor * quantityMilli) / 1000,
-          'Line subtotal',
+          'Line price',
         );
-        const lineTax = safeMinor(
-          (lineSubtotal * product.tax_rate_basis_points) / 10000,
-          'Line tax',
-        );
-        const lineTotal = safeMinor(lineSubtotal + lineTax, 'Line total');
+        const lineTax =
+          store.tax_behavior === 'inclusive'
+            ? safeMinor(
+                (enteredPrice * product.tax_rate_basis_points) /
+                  (10000 + product.tax_rate_basis_points),
+                'Line tax',
+              )
+            : safeMinor((enteredPrice * product.tax_rate_basis_points) / 10000, 'Line tax');
+        const lineSubtotal =
+          store.tax_behavior === 'inclusive' ? enteredPrice - lineTax : enteredPrice;
+        const lineTotal =
+          store.tax_behavior === 'inclusive'
+            ? enteredPrice
+            : safeMinor(lineSubtotal + lineTax, 'Line total');
         subtotalMinor = safeMinor(subtotalMinor + lineSubtotal, 'Sale subtotal');
         taxMinor = safeMinor(taxMinor + lineTax, 'Sale tax');
         lines.push({
@@ -141,14 +172,17 @@ export class CheckoutService {
         .get(this.counterId) as { next: number };
       const receiptNumber = String(nextReceipt.next).padStart(6, '0');
       const saleId = randomUUID();
-      const currency = this.database
-        .prepare('SELECT name, currency_code, timezone FROM stores WHERE id = ?')
-        .get(this.storeId) as { name: string; currency_code: string; timezone: string };
       const result: SaleResult = {
         id: saleId,
         receiptNumber,
-        businessName: currency.name,
-        currencyCode: currency.currency_code,
+        businessName: store.name,
+        businessAddress: store.address ?? '',
+        businessPhone: store.phone ?? '',
+        businessRegistrationNumber: store.business_registration_number ?? '',
+        currencyCode: store.currency_code,
+        taxBehavior: store.tax_behavior,
+        receiptFooter: store.receipt_footer,
+        receiptPaperWidthMm: store.receipt_paper_width_mm,
         subtotalMinor,
         discountMinor: 0,
         taxMinor,
@@ -168,7 +202,7 @@ export class CheckoutService {
           this.storeId,
           this.counterId,
           receiptNumber,
-          currency.currency_code,
+          store.currency_code,
           subtotalMinor,
           taxMinor,
           totalMinor,
@@ -231,11 +265,18 @@ export class CheckoutService {
           saleId,
           JSON.stringify({
             storeId: this.storeId,
-            name: currency.name,
-            currencyCode: currency.currency_code,
-            timezone: currency.timezone,
+            name: store.name,
+            currencyCode: store.currency_code,
+            timezone: store.timezone,
+            address: store.address,
+            phone: store.phone,
+            businessRegistrationNumber: store.business_registration_number,
           }),
-          JSON.stringify({ paperWidthMm: 80, taxBehavior: 'exclusive', footer: '' }),
+          JSON.stringify({
+            receiptPaperWidthMm: store.receipt_paper_width_mm,
+            taxBehavior: store.tax_behavior,
+            receiptFooter: store.receipt_footer,
+          }),
         );
       this.database
         .prepare(
@@ -267,7 +308,7 @@ export class CheckoutService {
   private loadSale(saleId: string): SaleResult {
     const sale = this.database
       .prepare(
-        `SELECT s.id, s.receipt_number AS receiptNumber, s.currency_code AS currencyCode, s.subtotal_minor AS subtotalMinor, s.discount_minor AS discountMinor, s.tax_minor AS taxMinor, s.total_minor AS totalMinor, s.change_due_minor AS changeDueMinor, s.completed_at AS completedAt, json_extract(r.business_profile_json, '$.name') AS businessName FROM sales s JOIN receipt_snapshots r ON r.sale_id = s.id WHERE s.id = ?`,
+        `SELECT s.id, s.receipt_number AS receiptNumber, s.currency_code AS currencyCode, s.subtotal_minor AS subtotalMinor, s.discount_minor AS discountMinor, s.tax_minor AS taxMinor, s.total_minor AS totalMinor, s.change_due_minor AS changeDueMinor, s.completed_at AS completedAt, json_extract(r.business_profile_json, '$.name') AS businessName, COALESCE(json_extract(r.business_profile_json, '$.address'), '') AS businessAddress, COALESCE(json_extract(r.business_profile_json, '$.phone'), '') AS businessPhone, COALESCE(json_extract(r.business_profile_json, '$.businessRegistrationNumber'), '') AS businessRegistrationNumber, COALESCE(json_extract(r.receipt_config_json, '$.taxBehavior'), 'exclusive') AS taxBehavior, COALESCE(json_extract(r.receipt_config_json, '$.receiptFooter'), json_extract(r.receipt_config_json, '$.footer'), '') AS receiptFooter, COALESCE(json_extract(r.receipt_config_json, '$.receiptPaperWidthMm'), json_extract(r.receipt_config_json, '$.paperWidthMm'), 80) AS receiptPaperWidthMm FROM sales s JOIN receipt_snapshots r ON r.sale_id = s.id WHERE s.id = ?`,
       )
       .get(saleId) as Omit<SaleResult, 'lines' | 'payments'> | undefined;
     if (!sale)

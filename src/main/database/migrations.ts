@@ -204,6 +204,18 @@ export const migrations: Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 3,
+    name: 'business_and_receipt_settings',
+    sql: `
+      ALTER TABLE stores ADD COLUMN tax_behavior TEXT NOT NULL DEFAULT 'exclusive' CHECK (tax_behavior IN ('exclusive','inclusive'));
+      ALTER TABLE stores ADD COLUMN address TEXT;
+      ALTER TABLE stores ADD COLUMN phone TEXT;
+      ALTER TABLE stores ADD COLUMN business_registration_number TEXT;
+      ALTER TABLE stores ADD COLUMN receipt_footer TEXT NOT NULL DEFAULT '';
+      ALTER TABLE stores ADD COLUMN receipt_paper_width_mm INTEGER NOT NULL DEFAULT 80 CHECK (receipt_paper_width_mm IN (58,80));
+    `,
+  },
 ];
 
 export function migrationChecksum(migration: Migration): string {

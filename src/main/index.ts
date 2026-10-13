@@ -6,6 +6,7 @@ import { closeLocalDatabase, getLocalDatabaseStatus, initializeLocalDatabase } f
 import { registerInventoryIpcHandlers } from './ipc/register-inventory-handlers';
 import { registerCheckoutIpcHandlers } from './ipc/register-checkout-handlers';
 import { registerSalesIpcHandlers } from './ipc/register-sales-handlers';
+import { registerSettingsIpcHandlers } from './ipc/register-settings-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -72,6 +73,7 @@ app
       registerInventoryIpcHandlers();
       registerCheckoutIpcHandlers();
       registerSalesIpcHandlers();
+      registerSettingsIpcHandlers();
     }
     createMainWindow();
     app.on('activate', () => {

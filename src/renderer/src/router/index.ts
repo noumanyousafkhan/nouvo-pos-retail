@@ -4,6 +4,7 @@ import FeaturePlaceholderView from '@/views/FeaturePlaceholderView.vue';
 import InventoryView from '@/views/InventoryView.vue';
 import CheckoutView from '@/views/CheckoutView.vue';
 import SalesHistoryView from '@/views/SalesHistoryView.vue';
+import SettingsView from '@/views/SettingsView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -68,7 +69,7 @@ export const router = createRouter({
     {
       path: '/settings',
       name: 'settings',
-      component: FeaturePlaceholderView,
+      component: SettingsView,
       meta: {
         title: 'Settings',
         description: 'Store setup, business branding, users and operations.',

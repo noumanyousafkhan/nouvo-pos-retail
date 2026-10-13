@@ -92,6 +92,40 @@ describe('checkout service', () => {
     ).toEqual({ quantity: 3500 });
   });
 
+  it('calculates tax-inclusive prices and snapshots the configured receipt settings', () => {
+    const { database, storeId, productId, service } = setup();
+    database.connection
+      .prepare(
+        "UPDATE stores SET tax_behavior = 'inclusive', receipt_footer = 'Thank you', receipt_paper_width_mm = 58 WHERE id = ?",
+      )
+      .run(storeId);
+    database.connection
+      .prepare('UPDATE products SET selling_price_minor = 1100 WHERE id = ?')
+      .run(productId);
+    const sale = service.complete(
+      request(productId, {
+        items: [{ productId, quantityMilli: 1000 }],
+        paymentLines: [{ paymentMethod: 'cash', amountMinor: 1100 }],
+      }),
+    );
+    expect(sale).toMatchObject({
+      subtotalMinor: 1000,
+      taxMinor: 100,
+      totalMinor: 1100,
+      taxBehavior: 'inclusive',
+      receiptFooter: 'Thank you',
+      receiptPaperWidthMm: 58,
+    });
+    const snapshot = database.connection
+      .prepare('SELECT receipt_config_json FROM receipt_snapshots WHERE sale_id = ?')
+      .get(sale.id).receipt_config_json;
+    expect(JSON.parse(snapshot)).toMatchObject({
+      taxBehavior: 'inclusive',
+      receiptFooter: 'Thank you',
+      receiptPaperWidthMm: 58,
+    });
+  });
+
   it('supports split payments and computes cash change', () => {
     const { productId, service } = setup();
     const sale = service.complete(

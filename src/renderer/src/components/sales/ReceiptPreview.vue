@@ -21,6 +21,7 @@ function printReceipt() {
   <div class="inventory-modal-backdrop receipt-preview-backdrop">
     <section
       class="inventory-modal checkout-receipt-modal receipt-preview-modal"
+      :style="{ '--receipt-width': `${sale.receiptPaperWidthMm}mm` }"
       role="dialog"
       aria-modal="true"
       aria-labelledby="receipt-title"
@@ -29,7 +30,15 @@ function printReceipt() {
         <span>✓</span>
         <p>SALE COMPLETED</p>
         <h2 id="receipt-title">Receipt #{{ sale.receiptNumber }}</h2>
-        <small>{{ sale.businessName }} · {{ new Date(sale.completedAt).toLocaleString() }}</small>
+        <small>{{ new Date(sale.completedAt).toLocaleString() }}</small>
+      </div>
+      <div class="receipt-business-details">
+        <strong>{{ sale.businessName }}</strong>
+        <span v-if="sale.businessAddress">{{ sale.businessAddress }}</span>
+        <span v-if="sale.businessPhone">{{ sale.businessPhone }}</span>
+        <span v-if="sale.businessRegistrationNumber"
+          >Reg: {{ sale.businessRegistrationNumber }}</span
+        >
       </div>
       <div class="checkout-receipt-lines">
         <div v-for="(line, index) in sale.lines" :key="`${line.productId}-${index}`">
@@ -71,6 +80,7 @@ function printReceipt() {
           <span>Change due</span><strong>{{ formatMoney(sale.changeDueMinor) }}</strong>
         </div>
       </div>
+      <p v-if="sale.receiptFooter" class="receipt-footer-text">{{ sale.receiptFooter }}</p>
       <p class="checkout-receipt-note">
         This receipt is saved locally. Use Print receipt to open the system print dialog and select
         an available printer.

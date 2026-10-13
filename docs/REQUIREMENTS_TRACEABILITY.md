@@ -86,6 +86,9 @@
 - [x] Shared receipt preview can open the system print dialog; direct thermal device setup still requires hardware testing.
 - [x] Audit and outbox event recorded in the same transaction as the sale.
 - [x] Version 2 migration adds idempotency fields, cash tender/change values and immutable receipt snapshot storage.
+- [x] Version 3 migration adds business address/contact, tax behavior and receipt paper/footer settings.
+- [x] Settings updates are validated, revisioned, audited and queued for future synchronization.
+- [x] Checkout supports tax-inclusive and tax-exclusive calculation and snapshots the settings per sale.
 - [x] Automated tests cover successful checkout, split payment, change, idempotent retry, conflicting retries, insufficient stock and mismatched payments.
 - [ ] Thermal receipt printing, tax-inclusive/exclusive setup, returns/voids and cashier sessions remain incomplete.
 
@@ -96,4 +99,4 @@
 
 ## Current status
 
-Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 26 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product/stock/checkout UI smoke tests and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, central synchronization, accounting, full branding setup, direct thermal-printer configuration, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing. Tax-inclusive pricing and production tax setup also remain acceptance gates.
+Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 26 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product/stock/checkout UI smoke tests and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, central synchronization, accounting, full branding setup, direct thermal-printer configuration, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing. Tax mode and receipt settings are configurable; their values still require business/accountant acceptance before production.

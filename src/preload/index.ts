@@ -4,6 +4,7 @@ import type { ProductInput, ProductListQuery } from '../shared/contracts/product
 import type { StockMovementInput } from '../shared/contracts/stock';
 import type { CheckoutInput } from '../shared/contracts/checkout';
 import type { SalesListQuery } from '../shared/contracts/sales';
+import type { SaveBusinessSettings } from '../shared/contracts/settings';
 
 const api: NouvoApi = Object.freeze({
   getAppInfo: () => ipcRenderer.invoke('app:get-info', {}),
@@ -18,6 +19,9 @@ const api: NouvoApi = Object.freeze({
   completeSale: (input: CheckoutInput) => ipcRenderer.invoke('checkout:complete-sale', input),
   listSales: (query?: Partial<SalesListQuery>) => ipcRenderer.invoke('sales:list', query ?? {}),
   getSale: (id: string) => ipcRenderer.invoke('sales:get', id),
+  getBusinessSettings: () => ipcRenderer.invoke('settings:get-business'),
+  saveBusinessSettings: (input: SaveBusinessSettings) =>
+    ipcRenderer.invoke('settings:save-business', input),
 });
 
 contextBridge.exposeInMainWorld('nouvo', api);

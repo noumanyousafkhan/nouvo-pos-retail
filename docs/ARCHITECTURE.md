@@ -11,6 +11,7 @@
 - `src/main/inventory`: product repository/service and stock-ledger service; product and stock mutations use transactions, audit snapshots and durable outbox events.
 - `src/main/checkout/checkout-service.ts`: atomic sale completion, stock validation/deduction, payment splits/change, immutable line/receipt snapshots and idempotency keys.
 - `src/main/checkout/sales-service.ts`: counter-scoped sales search, date filters, receipt listing and detail retrieval.
+- `src/main/settings/settings-service.ts`: validated business identity, currency/timezone, tax behavior and receipt settings; each revision is audited and queued for sync.
 - `src/renderer/src/components/sales/ReceiptPreview.vue`: shared receipt preview for checkout and sales history, with a standard system print dialog and 80 mm print CSS.
 - `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
@@ -38,7 +39,7 @@
 ## Checkout rules
 
 - The checkout service re-reads active product prices, tax rates and counter stock inside a write transaction; the renderer cart is never authoritative.
-- The first implementation treats configured tax rates as tax-exclusive and rounds tax per line to the currency minor unit. Tax-included pricing/configuration remains a setup requirement before production.
+- Tax-exclusive and tax-inclusive pricing modes are configurable. Tax is rounded per line to the currency minor unit; tax mode must be confirmed with the business accountant before production.
 - Applied payment amounts must exactly equal the sale total. Cash tendered may exceed its applied amount and change is recorded; non-cash tendered amount must match its applied amount. Split payments are supported.
 - Every checkout request carries a UUID idempotency key and a request hash. A retry with the same key/payload returns the original sale; a different payload using that key is rejected.
 - Sale, line snapshots, payments, stock movements, receipt snapshot, audit event and outbox event commit together or roll back together.
