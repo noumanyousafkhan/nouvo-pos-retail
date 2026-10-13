@@ -90,6 +90,45 @@ export const PurchaseReturnSummarySchema = z.object({
 export type PurchaseReturnInput = z.infer<typeof PurchaseReturnInputSchema>;
 export type PurchaseReturnableLine = z.infer<typeof PurchaseReturnableLineSchema>;
 export type PurchaseReturnSummary = z.infer<typeof PurchaseReturnSummarySchema>;
+export const SupplierPaymentInputSchema = z
+  .object({
+    purchaseOrderId: z.string().uuid(),
+    amountMinor: z.number().int().positive().max(9_000_000_000_000),
+    paymentMethod: z.enum(['cash', 'bank', 'mobile', 'card', 'other']),
+    reference: z.string().trim().max(160).default(''),
+    notes: z.string().trim().max(500).default(''),
+  })
+  .strict();
+export const SupplierBalanceSchema = z.object({
+  purchaseOrderId: z.string().uuid(),
+  orderNumber: z.string(),
+  supplierId: z.string().uuid(),
+  supplierName: z.string(),
+  supplierInvoiceNumber: z.string(),
+  receivedAt: z.string(),
+  originalAmountMinor: z.number().int().nonnegative(),
+  returnedAmountMinor: z.number().int().nonnegative(),
+  paidAmountMinor: z.number().int().nonnegative(),
+  outstandingMinor: z.number().int(),
+  ageDays: z.number().int().nonnegative(),
+  agingBucket: z.enum(['0-30 days', '31-60 days', '61-90 days', '90+ days']),
+});
+export const SupplierPaymentSummarySchema = z.object({
+  id: z.string().uuid(),
+  paymentNumber: z.string(),
+  purchaseOrderId: z.string().uuid(),
+  orderNumber: z.string(),
+  supplierId: z.string().uuid(),
+  supplierName: z.string(),
+  amountMinor: z.number().int().positive(),
+  paymentMethod: z.enum(['cash', 'bank', 'mobile', 'card', 'other']),
+  reference: z.string(),
+  notes: z.string(),
+  createdAt: z.string(),
+});
+export type SupplierPaymentInput = z.infer<typeof SupplierPaymentInputSchema>;
+export type SupplierBalance = z.infer<typeof SupplierBalanceSchema>;
+export type SupplierPaymentSummary = z.infer<typeof SupplierPaymentSummarySchema>;
 export const PurchaseOrderSummarySchema = z.object({
   id: z.string().uuid(),
   orderNumber: z.string(),
@@ -118,4 +157,7 @@ export interface PurchasingApi {
   listReturnablePurchaseOrderLines(orderId: string): Promise<PurchaseReturnableLine[]>;
   createPurchaseReturn(input: PurchaseReturnInput): Promise<PurchaseReturnSummary>;
   listPurchaseReturns(): Promise<PurchaseReturnSummary[]>;
+  listSupplierBalances(): Promise<SupplierBalance[]>;
+  createSupplierPayment(input: SupplierPaymentInput): Promise<SupplierPaymentSummary>;
+  listSupplierPayments(): Promise<SupplierPaymentSummary[]>;
 }

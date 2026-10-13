@@ -256,6 +256,43 @@ export class AccountingService {
     });
   }
 
+  postSupplierPayment(paymentId: string): string {
+    this.ensureChartOfAccounts();
+    const prior = this.findExisting('supplier_payment', paymentId);
+    if (prior) return prior;
+    const payment = this.database
+      .prepare(
+        'SELECT id,payment_number,amount_minor,payment_method FROM supplier_payments WHERE id=? AND store_id=?',
+      )
+      .get(paymentId, this.storeId) as
+      | { id: string; payment_number: string; amount_minor: number; payment_method: string }
+      | undefined;
+    if (!payment) throw new Error('Cannot post accounting: supplier payment was not found.');
+    const currency = this.database
+      .prepare('SELECT currency_code FROM stores WHERE id=?')
+      .get(this.storeId) as { currency_code: string } | undefined;
+    if (!currency) throw new Error('Store currency is not configured.');
+    const creditAccount = payment.payment_method === 'cash' ? '1000' : '1010';
+    return this.postBalanced({
+      sourceType: 'supplier_payment',
+      sourceId: paymentId,
+      currencyCode: currency.currency_code,
+      description: `Supplier payment ${payment.payment_number}`,
+      lines: [
+        {
+          accountCode: '2000',
+          debitMinor: payment.amount_minor,
+          memo: `Settle supplier payable ${payment.payment_number}`,
+        },
+        {
+          accountCode: creditAccount,
+          creditMinor: payment.amount_minor,
+          memo: `Supplier payment via ${payment.payment_method}`,
+        },
+      ],
+    });
+  }
+
   listAccounts(): {
     id: string;
     code: string;
@@ -595,7 +632,8 @@ export class AccountingService {
   }
 
   private postBalanced(input: {
-    sourceType: 'sale' | 'sale_return' | 'purchase_receipt' | 'purchase_return';
+    sourceType:
+      'sale' | 'sale_return' | 'purchase_receipt' | 'purchase_return' | 'supplier_payment';
     sourceId: string;
     currencyCode: string;
     description: string;

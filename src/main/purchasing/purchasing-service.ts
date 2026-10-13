@@ -6,6 +6,9 @@ import {
   PurchaseReturnInputSchema,
   PurchaseReturnSummarySchema,
   PurchaseReturnableLineSchema,
+  SupplierBalanceSchema,
+  SupplierPaymentInputSchema,
+  SupplierPaymentSummarySchema,
   ReceivePurchaseOrderSchema,
   SupplierInputSchema,
   SupplierSchema,
@@ -13,6 +16,9 @@ import {
   type PurchaseReturnInput,
   type PurchaseReturnSummary,
   type PurchaseReturnableLine,
+  type SupplierBalance,
+  type SupplierPaymentInput,
+  type SupplierPaymentSummary,
   type Supplier,
 } from '../../shared/contracts/purchasing';
 import { runInTransaction } from '../database/connection';
@@ -683,6 +689,178 @@ export class PurchasingService {
         )
         .get(returnId);
       return PurchaseReturnSummarySchema.parse(summary);
+    });
+  }
+
+  listSupplierBalances(): SupplierBalance[] {
+    const rows = this.database
+      .prepare(
+        `SELECT po.id AS purchaseOrderId, po.order_number AS orderNumber,
+          po.supplier_id AS supplierId, su.name AS supplierName,
+          po.supplier_invoice_number AS supplierInvoiceNumber,
+          COALESCE(po.received_at,po.ordered_at) AS receivedAt,
+          po.subtotal_minor AS originalAmountMinor,
+          COALESCE((SELECT SUM(pr.total_minor) FROM purchase_returns pr WHERE pr.purchase_order_id=po.id),0) AS returnedAmountMinor,
+          COALESCE((SELECT SUM(sp.amount_minor) FROM supplier_payments sp WHERE sp.purchase_order_id=po.id),0) AS paidAmountMinor
+        FROM purchase_orders po JOIN suppliers su ON su.id=po.supplier_id
+        WHERE po.store_id=? AND po.counter_id=? AND po.status='received'
+        ORDER BY COALESCE(po.received_at,po.ordered_at) DESC`,
+      )
+      .all(this.storeId, this.counterId) as {
+      purchaseOrderId: string;
+      orderNumber: string;
+      supplierId: string;
+      supplierName: string;
+      supplierInvoiceNumber: string;
+      receivedAt: string;
+      originalAmountMinor: number;
+      returnedAmountMinor: number;
+      paidAmountMinor: number;
+    }[];
+    return rows.map((row) => {
+      const ageDays = Math.max(
+        0,
+        Math.floor((Date.now() - new Date(row.receivedAt).getTime()) / 86_400_000),
+      );
+      const agingBucket =
+        ageDays <= 30
+          ? '0-30 days'
+          : ageDays <= 60
+            ? '31-60 days'
+            : ageDays <= 90
+              ? '61-90 days'
+              : '90+ days';
+      return SupplierBalanceSchema.parse({
+        ...row,
+        outstandingMinor: row.originalAmountMinor - row.returnedAmountMinor - row.paidAmountMinor,
+        ageDays,
+        agingBucket,
+      });
+    });
+  }
+
+  listSupplierPayments(): SupplierPaymentSummary[] {
+    const rows = this.database
+      .prepare(
+        `SELECT sp.id, sp.payment_number AS paymentNumber, sp.purchase_order_id AS purchaseOrderId,
+          po.order_number AS orderNumber, sp.supplier_id AS supplierId, su.name AS supplierName,
+          sp.amount_minor AS amountMinor, sp.payment_method AS paymentMethod,
+          sp.reference, sp.notes, sp.created_at AS createdAt
+        FROM supplier_payments sp
+        JOIN purchase_orders po ON po.id=sp.purchase_order_id
+        JOIN suppliers su ON su.id=sp.supplier_id
+        WHERE sp.store_id=? AND sp.counter_id=?
+        ORDER BY sp.created_at DESC LIMIT 200`,
+      )
+      .all(this.storeId, this.counterId);
+    return rows.map((row) => SupplierPaymentSummarySchema.parse(row));
+  }
+
+  createSupplierPayment(rawInput: unknown): SupplierPaymentSummary {
+    const input = SupplierPaymentInputSchema.parse(rawInput) as SupplierPaymentInput;
+    return runInTransaction(this.database, () => {
+      const order = this.database
+        .prepare(
+          `SELECT po.id, po.order_number, po.supplier_id, po.status, po.subtotal_minor,
+            COALESCE((SELECT SUM(pr.total_minor) FROM purchase_returns pr WHERE pr.purchase_order_id=po.id),0) AS returned_minor,
+            COALESCE((SELECT SUM(sp.amount_minor) FROM supplier_payments sp WHERE sp.purchase_order_id=po.id),0) AS paid_minor
+          FROM purchase_orders po WHERE po.id=? AND po.store_id=? AND po.counter_id=?`,
+        )
+        .get(input.purchaseOrderId, this.storeId, this.counterId) as
+        | {
+            id: string;
+            order_number: string;
+            supplier_id: string;
+            status: string;
+            subtotal_minor: number;
+            returned_minor: number;
+            paid_minor: number;
+          }
+        | undefined;
+      if (!order || order.status !== 'received')
+        throw new Error(
+          'Supplier payments can only settle a received purchase order from this counter.',
+        );
+      const outstanding = order.subtotal_minor - order.returned_minor - order.paid_minor;
+      if (outstanding <= 0)
+        throw new Error('This purchase order has no outstanding supplier balance.');
+      if (input.amountMinor > outstanding)
+        throw new Error('Supplier payment cannot exceed the remaining invoice balance.');
+      const datePart = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      const prefix = `SP-${datePart}-`;
+      const sequence = this.database
+        .prepare(
+          'SELECT COUNT(*) AS count FROM supplier_payments WHERE store_id=? AND payment_number LIKE ?',
+        )
+        .get(this.storeId, `${prefix}%`) as { count: number };
+      const paymentNumber = prefix + String(sequence.count + 1).padStart(4, '0');
+      const paymentId = randomUUID();
+      this.database
+        .prepare(
+          'INSERT INTO supplier_payments (id,store_id,counter_id,supplier_id,purchase_order_id,payment_number,amount_minor,payment_method,reference,notes,created_by_user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        )
+        .run(
+          paymentId,
+          this.storeId,
+          this.counterId,
+          order.supplier_id,
+          order.id,
+          paymentNumber,
+          input.amountMinor,
+          input.paymentMethod,
+          input.reference,
+          input.notes,
+          this.actorUserId,
+        );
+      new AccountingService(this.database, this.storeId, this.actorUserId).postSupplierPayment(
+        paymentId,
+      );
+      this.database
+        .prepare(
+          "INSERT INTO audit_events (id,store_id,actor_user_id,action,entity_type,entity_id,after_json) VALUES (?,?,?,'supplier.payment.created','supplier_payment',?,?)",
+        )
+        .run(
+          randomUUID(),
+          this.storeId,
+          this.actorUserId,
+          paymentId,
+          JSON.stringify({
+            paymentNumber,
+            orderId: order.id,
+            amountMinor: input.amountMinor,
+            paymentMethod: input.paymentMethod,
+          }),
+        );
+      this.database
+        .prepare(
+          "INSERT INTO outbox_events (id,event_type,aggregate_type,aggregate_id,payload_json) VALUES (?,'supplier.payment.created','supplier_payment',?,?)",
+        )
+        .run(
+          randomUUID(),
+          paymentId,
+          JSON.stringify({
+            schemaVersion: 1,
+            paymentId,
+            paymentNumber,
+            supplierId: order.supplier_id,
+            purchaseOrderId: order.id,
+            amountMinor: input.amountMinor,
+            paymentMethod: input.paymentMethod,
+            reference: input.reference,
+            notes: input.notes,
+          }),
+        );
+      const summary = this.database
+        .prepare(
+          `SELECT sp.id, sp.payment_number AS paymentNumber, sp.purchase_order_id AS purchaseOrderId,
+            po.order_number AS orderNumber, sp.supplier_id AS supplierId, su.name AS supplierName,
+            sp.amount_minor AS amountMinor, sp.payment_method AS paymentMethod,
+            sp.reference, sp.notes, sp.created_at AS createdAt
+          FROM supplier_payments sp JOIN purchase_orders po ON po.id=sp.purchase_order_id
+          JOIN suppliers su ON su.id=sp.supplier_id WHERE sp.id=?`,
+        )
+        .get(paymentId);
+      return SupplierPaymentSummarySchema.parse(summary);
     });
   }
 

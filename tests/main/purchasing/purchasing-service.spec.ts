@@ -141,6 +141,12 @@ describe('purchasing service', () => {
       totalMinor: 800,
       lineCount: 1,
     });
+    expect(service.listSupplierBalances()[0]).toMatchObject({
+      originalAmountMinor: 1600,
+      returnedAmountMinor: 800,
+      paidAmountMinor: 0,
+      outstandingMinor: 800,
+    });
     expect(
       database.connection
         .prepare(
@@ -199,6 +205,82 @@ describe('purchasing service', () => {
         )
         .get(),
     ).toEqual({ count: 0 });
+  });
+
+  it('settles supplier invoices with partial payments, aging balances and balanced accounting journals', () => {
+    const { database, storeId, counterId, productId, service } = setup();
+    const supplier = service.saveSupplier({ name: 'Wholesale Foods' });
+    const order = service.createPurchaseOrder({
+      supplierId: supplier.id,
+      lines: [{ productId, quantityMilli: 2000, unitCostMinor: 800 }],
+    });
+    service.receivePurchaseOrder({ id: order.id, supplierInvoiceNumber: 'SUP-PAY-1' });
+    const balance = service.listSupplierBalances()[0]!;
+    expect(balance).toMatchObject({
+      purchaseOrderId: order.id,
+      originalAmountMinor: 1600,
+      returnedAmountMinor: 0,
+      paidAmountMinor: 0,
+      outstandingMinor: 1600,
+      agingBucket: '0-30 days',
+    });
+    expect(() =>
+      service.createSupplierPayment({
+        purchaseOrderId: order.id,
+        amountMinor: 1601,
+        paymentMethod: 'cash',
+      }),
+    ).toThrow(/cannot exceed/i);
+    const first = service.createSupplierPayment({
+      purchaseOrderId: order.id,
+      amountMinor: 500,
+      paymentMethod: 'cash',
+      reference: 'CASH-1',
+    });
+    expect(first).toMatchObject({ orderNumber: order.orderNumber, amountMinor: 500 });
+    expect(service.listSupplierBalances()[0]).toMatchObject({
+      paidAmountMinor: 500,
+      outstandingMinor: 1100,
+    });
+    const second = service.createSupplierPayment({
+      purchaseOrderId: order.id,
+      amountMinor: 1100,
+      paymentMethod: 'bank',
+      reference: 'BANK-1',
+    });
+    expect(service.listSupplierBalances()[0]).toMatchObject({
+      paidAmountMinor: 1600,
+      outstandingMinor: 0,
+    });
+    expect(service.listSupplierPayments()).toHaveLength(2);
+    for (const payment of [first, second]) {
+      expect(
+        database.connection
+          .prepare(
+            "SELECT je.source_type AS sourceType,SUM(jl.debit_minor) AS debit,SUM(jl.credit_minor) AS credit FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id WHERE je.store_id=? AND je.source_type='supplier_payment' AND je.source_id=? GROUP BY je.id",
+          )
+          .get(storeId, payment.id),
+      ).toMatchObject({
+        sourceType: 'supplier_payment',
+        debit: payment.amountMinor,
+        credit: payment.amountMinor,
+      });
+    }
+    expect(
+      database.connection
+        .prepare(
+          'SELECT COUNT(*) AS count FROM supplier_payments WHERE counter_id=? AND id IN (?,?)',
+        )
+        .get(counterId, first.id, second.id),
+    ).toEqual({ count: 2 });
+    expect(
+      database.connection
+        .prepare(
+          "SELECT COUNT(*) AS count FROM outbox_events WHERE event_type='supplier.payment.created' AND aggregate_id IN (?,?)",
+        )
+        .get(first.id, second.id),
+    ).toEqual({ count: 2 });
+    expect(database.connection.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   });
 
   it('cancels only draft orders and does not create stock movements', () => {

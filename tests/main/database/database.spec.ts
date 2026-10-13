@@ -56,6 +56,7 @@ describe('local SQLite database foundation', () => {
         { version: 9, name: 'sync_status_and_outbox_diagnostics' },
         { version: 10, name: 'counter_stock_allocation_enforcement' },
         { version: 11, name: 'supplier_returns_and_accounting_sources' },
+        { version: 12, name: 'supplier_payment_settlement_and_aging' },
       ]);
       expect(
         database.connection
@@ -65,7 +66,7 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 11 });
+      ).toEqual({ count: 12 });
     } finally {
       database.close();
     }

@@ -16,6 +16,7 @@ import type {
 import type {
   PurchaseOrderInput,
   PurchaseReturnInput,
+  SupplierPaymentInput,
   ReceivePurchaseOrderInput,
   SupplierInput,
 } from '../shared/contracts/purchasing';
@@ -44,6 +45,10 @@ const api: NouvoApi = Object.freeze({
   createPurchaseReturn: (input: PurchaseReturnInput) =>
     ipcRenderer.invoke('purchasing:create-return', input),
   listPurchaseReturns: () => ipcRenderer.invoke('purchasing:list-returns'),
+  listSupplierBalances: () => ipcRenderer.invoke('purchasing:list-balances'),
+  createSupplierPayment: (input: SupplierPaymentInput) =>
+    ipcRenderer.invoke('purchasing:create-payment', input),
+  listSupplierPayments: () => ipcRenderer.invoke('purchasing:list-payments'),
   getActiveCashierSession: () => ipcRenderer.invoke('cash-session:get-active'),
   listCashierSessions: () => ipcRenderer.invoke('cash-session:list-history'),
   listAccountingAccounts: () => ipcRenderer.invoke('accounting:list-accounts'),

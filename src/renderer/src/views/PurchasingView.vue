@@ -9,6 +9,8 @@ import type {
   PurchaseOrderSummary,
   PurchaseReturnableLine,
   PurchaseReturnSummary,
+  SupplierBalance,
+  SupplierPaymentSummary,
   Supplier,
 } from '@shared/contracts/purchasing';
 
@@ -16,6 +18,19 @@ const suppliers = ref<Supplier[]>([]);
 const products = ref<Product[]>([]);
 const orders = ref<PurchaseOrderSummary[]>([]);
 const purchaseReturns = ref<PurchaseReturnSummary[]>([]);
+const supplierBalances = ref<SupplierBalance[]>([]);
+const supplierPayments = ref<SupplierPaymentSummary[]>([]);
+const canPaySuppliers = ref(false);
+const paymentForm = reactive({
+  purchaseOrderId: '',
+  amount: '',
+  paymentMethod: 'cash',
+  reference: '',
+  notes: '',
+});
+const selectedSupplierBalance = computed(() =>
+  supplierBalances.value.find((balance) => balance.purchaseOrderId === paymentForm.purchaseOrderId),
+);
 const returnOrder = ref<PurchaseOrderSummary | null>(null);
 const returnLines = ref<Array<PurchaseReturnableLine & { quantity: string }>>([]);
 const returnReason = ref('');
@@ -50,17 +65,32 @@ async function refresh() {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [supplierRows, productRows, orderRows, returnRows, settings] = await Promise.all([
-      window.nouvo.listSuppliers(),
-      window.nouvo.listProducts({ includeArchived: false }),
-      window.nouvo.listPurchaseOrders(),
-      window.nouvo.listPurchaseReturns(),
-      window.nouvo.getBusinessSettings(),
-    ]);
+    const [supplierRows, productRows, orderRows, returnRows, balanceRows, paymentRows, settings] =
+      await Promise.all([
+        window.nouvo.listSuppliers(),
+        window.nouvo.listProducts({ includeArchived: false }),
+        window.nouvo.listPurchaseOrders(),
+        window.nouvo.listPurchaseReturns(),
+        window.nouvo.listSupplierBalances(),
+        window.nouvo.listSupplierPayments(),
+        window.nouvo.getBusinessSettings(),
+      ]);
     suppliers.value = supplierRows;
     products.value = productRows.filter((product) => product.isActive);
     orders.value = orderRows;
     purchaseReturns.value = returnRows;
+    supplierBalances.value = balanceRows;
+    supplierPayments.value = paymentRows;
+    if (
+      !balanceRows.some(
+        (balance) =>
+          balance.purchaseOrderId === paymentForm.purchaseOrderId && balance.outstandingMinor > 0,
+      )
+    ) {
+      paymentForm.purchaseOrderId =
+        balanceRows.find((balance) => balance.outstandingMinor > 0)?.purchaseOrderId ?? '';
+      paymentForm.amount = '';
+    }
     currencyCode.value = settings.currencyCode;
     if (!orderForm.supplierId && suppliers.value.length)
       orderForm.supplierId = suppliers.value[0].id;
@@ -216,6 +246,40 @@ async function submitPurchaseReturn(): Promise<void> {
     busy.value = false;
   }
 }
+async function submitSupplierPayment(): Promise<void> {
+  const balance = selectedSupplierBalance.value;
+  const amountMinor = Math.round(Number(paymentForm.amount) * 100);
+  if (!balance || amountMinor <= 0 || !Number.isSafeInteger(amountMinor)) {
+    errorMessage.value = 'Select an outstanding invoice and enter a valid payment amount.';
+    return;
+  }
+  if (amountMinor > balance.outstandingMinor) {
+    errorMessage.value = 'Payment cannot exceed the remaining invoice balance.';
+    return;
+  }
+  busy.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+  try {
+    const payment = await window.nouvo.createSupplierPayment({
+      purchaseOrderId: balance.purchaseOrderId,
+      amountMinor,
+      paymentMethod: paymentForm.paymentMethod as 'cash' | 'bank' | 'mobile' | 'card' | 'other',
+      reference: paymentForm.reference.trim(),
+      notes: paymentForm.notes.trim(),
+    });
+    paymentForm.amount = '';
+    paymentForm.reference = '';
+    paymentForm.notes = '';
+    await refresh();
+    successMessage.value = `Supplier payment ${payment.paymentNumber} recorded for ${money(payment.amountMinor)}.`;
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error ? error.message : 'Supplier payment could not be recorded.';
+  } finally {
+    busy.value = false;
+  }
+}
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
     new Date(value),
@@ -226,8 +290,10 @@ onMounted(async () => {
   try {
     const authState = await window.nouvo.getAuthState();
     canReturnPurchases.value = authState.permissions.includes('purchasing.return');
+    canPaySuppliers.value = authState.permissions.includes('purchasing.pay');
   } catch {
     canReturnPurchases.value = false;
+    canPaySuppliers.value = false;
   }
 });
 </script>
@@ -484,6 +550,183 @@ onMounted(async () => {
               <td>{{ purchaseReturn.reason }}</td>
               <td>{{ money(purchaseReturn.totalMinor) }}</td>
               <td>{{ formatDate(purchaseReturn.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </BaseCard>
+    <BaseCard class="purchasing-orders-card">
+      <header class="purchasing-card-heading">
+        <div>
+          <h2>Supplier balances & aging</h2>
+          <p>
+            Open balances are calculated per received invoice after supplier returns and recorded
+            payments.
+          </p>
+        </div>
+        <span
+          >{{ supplierBalances.filter((balance) => balance.outstandingMinor > 0).length }} open
+          invoices</span
+        >
+      </header>
+      <div v-if="!supplierBalances.length" class="purchasing-empty">
+        Received purchase orders will appear here with their outstanding balance and age.
+      </div>
+      <div v-else class="reports-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>Invoice / order</th>
+              <th>Supplier</th>
+              <th>Received</th>
+              <th>Invoice</th>
+              <th>Returns</th>
+              <th>Paid</th>
+              <th>Outstanding</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="balance in supplierBalances" :key="balance.purchaseOrderId">
+              <td>
+                <strong>{{ balance.supplierInvoiceNumber || balance.orderNumber }}</strong
+                ><small>{{ balance.orderNumber }}</small>
+              </td>
+              <td>{{ balance.supplierName }}</td>
+              <td>{{ formatDate(balance.receivedAt) }}</td>
+              <td>{{ money(balance.originalAmountMinor) }}</td>
+              <td>{{ money(balance.returnedAmountMinor) }}</td>
+              <td>{{ money(balance.paidAmountMinor) }}</td>
+              <td>
+                <strong>{{ money(balance.outstandingMinor) }}</strong>
+              </td>
+              <td>
+                <span
+                  class="purchasing-status"
+                  :class="
+                    balance.outstandingMinor > 0
+                      ? 'purchasing-status--draft'
+                      : 'purchasing-status--received'
+                  "
+                  >{{ balance.agingBucket }} · {{ balance.ageDays }}d</span
+                >
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </BaseCard>
+    <BaseCard v-if="canPaySuppliers" class="purchasing-card">
+      <header class="purchasing-card-heading">
+        <div>
+          <h2>Supplier payment settlement</h2>
+          <p>
+            Record full or partial payment against a received supplier invoice. Overpayment is
+            blocked.
+          </p>
+        </div>
+      </header>
+      <div
+        v-if="!supplierBalances.some((balance) => balance.outstandingMinor > 0)"
+        class="purchasing-notice"
+      >
+        There are no outstanding supplier invoices to settle.
+      </div>
+      <div v-else class="purchasing-form-grid">
+        <label class="inventory-field purchasing-field-wide"
+          >Invoice to settle <span>*</span
+          ><select v-model="paymentForm.purchaseOrderId">
+            <option
+              v-for="balance in supplierBalances.filter((item) => item.outstandingMinor > 0)"
+              :key="balance.purchaseOrderId"
+              :value="balance.purchaseOrderId"
+            >
+              {{ balance.supplierName }} ·
+              {{ balance.supplierInvoiceNumber || balance.orderNumber }} · due
+              {{ money(balance.outstandingMinor) }}
+            </option>
+          </select></label
+        >
+        <label class="inventory-field"
+          >Payment amount ({{ currencyCode }}) <span>*</span
+          ><input
+            v-model="paymentForm.amount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            :max="(selectedSupplierBalance?.outstandingMinor ?? 0) / 100"
+        /></label>
+        <label class="inventory-field"
+          >Method
+          <select v-model="paymentForm.paymentMethod">
+            <option value="cash">Cash</option>
+            <option value="bank">Bank transfer</option>
+            <option value="mobile">Mobile payment</option>
+            <option value="card">Card</option>
+            <option value="other">Other</option>
+          </select></label
+        >
+        <label class="inventory-field"
+          >Reference
+          <input
+            v-model="paymentForm.reference"
+            maxlength="160"
+            placeholder="Transaction / cheque reference"
+        /></label>
+        <label class="inventory-field"
+          >Notes
+          <input
+            v-model="paymentForm.notes"
+            maxlength="500"
+            placeholder="Optional settlement notes"
+        /></label>
+        <div class="purchasing-field-wide purchasing-payment-summary">
+          <span>Invoice balance before payment</span
+          ><strong>{{ money(selectedSupplierBalance?.outstandingMinor ?? 0) }}</strong>
+        </div>
+        <div class="purchasing-field-wide">
+          <BaseButton
+            type="button"
+            :loading="busy"
+            :disabled="!selectedSupplierBalance || Number(paymentForm.amount) <= 0"
+            @click="submitSupplierPayment"
+            >Record supplier payment</BaseButton
+          >
+        </div>
+      </div>
+    </BaseCard>
+    <BaseCard v-if="supplierPayments.length" class="purchasing-orders-card">
+      <header class="purchasing-card-heading">
+        <div>
+          <h2>Supplier payment history</h2>
+          <p>Payments are linked to invoices and posted to the accounting ledger.</p>
+        </div>
+        <span>{{ supplierPayments.length }} payments</span>
+      </header>
+      <div class="reports-table-wrap">
+        <table class="inventory-table">
+          <thead>
+            <tr>
+              <th>Payment</th>
+              <th>Invoice</th>
+              <th>Supplier</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th>Amount</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="payment in supplierPayments" :key="payment.id">
+              <td>
+                <strong>{{ payment.paymentNumber }}</strong>
+              </td>
+              <td>{{ payment.orderNumber }}</td>
+              <td>{{ payment.supplierName }}</td>
+              <td>{{ payment.paymentMethod }}</td>
+              <td>{{ payment.reference || '—' }}</td>
+              <td>{{ money(payment.amountMinor) }}</td>
+              <td>{{ formatDate(payment.createdAt) }}</td>
             </tr>
           </tbody>
         </table>

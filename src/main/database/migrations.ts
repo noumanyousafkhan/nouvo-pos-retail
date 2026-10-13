@@ -630,6 +630,31 @@ export const migrations: Migration[] = [
         ('owner','purchasing.return'),('manager','purchasing.return'),('inventory_manager','purchasing.return');
     `,
   },
+  {
+    version: 12,
+    name: 'supplier_payment_settlement_and_aging',
+    sql: `
+      CREATE TABLE supplier_payments (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        payment_number TEXT NOT NULL,
+        amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+        payment_method TEXT NOT NULL CHECK (payment_method IN ('cash','bank','mobile','card','other')),
+        reference TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        created_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, payment_number)
+      ) STRICT;
+      CREATE INDEX supplier_payments_order_idx ON supplier_payments(purchase_order_id, created_at DESC);
+      CREATE INDEX supplier_payments_supplier_idx ON supplier_payments(supplier_id, created_at DESC);
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','purchasing.pay'),('manager','purchasing.pay');
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

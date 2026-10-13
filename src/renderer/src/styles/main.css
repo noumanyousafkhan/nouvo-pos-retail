@@ -2793,6 +2793,24 @@ a:focus-visible {
   flex-wrap: wrap;
   gap: 10px;
 }
+.purchasing-payment-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, #e6e9f0);
+  border-radius: 10px;
+  background: var(--surface-subtle, #f8f9fc);
+}
+.purchasing-payment-summary span {
+  color: var(--text-muted, #737b8c);
+  font-size: 12px;
+}
+.purchasing-payment-summary strong {
+  font-size: 18px;
+  color: var(--text-primary, #202638);
+}
 @media (max-width: 700px) {
   .purchasing-return-modal {
     padding: 16px;
