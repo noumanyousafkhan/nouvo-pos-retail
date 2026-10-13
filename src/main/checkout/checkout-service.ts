@@ -255,6 +255,15 @@ export class CheckoutService {
     });
   }
 
+  getById(rawSaleId: string): SaleResult {
+    const saleId = rawSaleId;
+    const saleExists = this.database
+      .prepare('SELECT 1 AS found FROM sales WHERE id = ? AND store_id = ? AND counter_id = ?')
+      .get(saleId, this.storeId, this.counterId);
+    if (!saleExists) throw new Error('Sale was not found on this counter.');
+    return this.loadSale(saleId);
+  }
+
   private loadSale(saleId: string): SaleResult {
     const sale = this.database
       .prepare(

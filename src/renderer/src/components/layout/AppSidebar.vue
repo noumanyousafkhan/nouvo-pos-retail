@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router';
 const navigation = [
   { label: 'Overview', to: '/', icon: '◫' },
   { label: 'Checkout', to: '/checkout', icon: '▣' },
+  { label: 'Sales history', to: '/sales', icon: '▧' },
   { label: 'Inventory', to: '/inventory', icon: '▤' },
   { label: 'Purchasing', to: '/purchasing', icon: '⇄' },
   { label: 'Reports', to: '/reports', icon: '▥' },

@@ -3,6 +3,7 @@ import DashboardView from '@/views/DashboardView.vue';
 import FeaturePlaceholderView from '@/views/FeaturePlaceholderView.vue';
 import InventoryView from '@/views/InventoryView.vue';
 import CheckoutView from '@/views/CheckoutView.vue';
+import SalesHistoryView from '@/views/SalesHistoryView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -22,6 +23,16 @@ export const router = createRouter({
         description:
           'Barcode-first checkout with stock validation, split payments and durable sale receipts.',
         module: 'Checkout',
+      },
+    },
+    {
+      path: '/sales',
+      name: 'sales',
+      component: SalesHistoryView,
+      meta: {
+        title: 'Sales history',
+        description: 'Completed sales, receipt lookup and reprint.',
+        module: 'Sales',
       },
     },
     {

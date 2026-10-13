@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import BaseButton from '@/components/base/BaseButton.vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
+import ReceiptPreview from '@/components/sales/ReceiptPreview.vue';
 import type { Product } from '@shared/contracts/products';
 import type { SaleResult } from '@shared/contracts/checkout';
 
@@ -488,58 +489,6 @@ onMounted(async () => {
       </section>
     </div>
 
-    <div v-if="receipt" class="inventory-modal-backdrop">
-      <section
-        class="inventory-modal checkout-receipt-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="receipt-title"
-      >
-        <div class="checkout-receipt-success">
-          <span>✓</span>
-          <p>SALE SAVED SUCCESSFULLY</p>
-          <h2 id="receipt-title">Receipt #{{ receipt.receiptNumber }}</h2>
-          <small
-            >{{ receipt.businessName }} ·
-            {{ new Date(receipt.completedAt).toLocaleString() }}</small
-          >
-        </div>
-        <div class="checkout-receipt-lines">
-          <div v-for="(line, index) in receipt.lines" :key="`${line.productId}-${index}`">
-            <span
-              >{{ line.productName }}
-              <small
-                >×
-                {{
-                  (line.quantityMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })
-                }}
-                {{ line.unit }}</small
-              ></span
-            ><strong>{{ formatMoney(line.lineTotalMinor) }}</strong>
-          </div>
-        </div>
-        <div class="checkout-receipt-totals">
-          <div>
-            <span>Subtotal</span><strong>{{ formatMoney(receipt.subtotalMinor) }}</strong>
-          </div>
-          <div>
-            <span>Tax</span><strong>{{ formatMoney(receipt.taxMinor) }}</strong>
-          </div>
-          <div class="checkout-grand-total">
-            <span>Total</span><strong>{{ formatMoney(receipt.totalMinor) }}</strong>
-          </div>
-          <div>
-            <span>Change due</span><strong>{{ formatMoney(receipt.changeDueMinor) }}</strong>
-          </div>
-        </div>
-        <p class="checkout-receipt-note">
-          Sale, payment, receipt snapshot, stock movements and sync event are saved locally. Thermal
-          printing will be connected in a later milestone.
-        </p>
-        <footer class="inventory-modal-footer">
-          <BaseButton block @click="closeReceipt">New sale</BaseButton>
-        </footer>
-      </section>
-    </div>
+    <ReceiptPreview v-if="receipt" :sale="receipt" done-label="New sale" @close="closeReceipt" />
   </div>
 </template>

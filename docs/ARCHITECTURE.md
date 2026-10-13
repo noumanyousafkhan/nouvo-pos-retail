@@ -10,6 +10,8 @@
 - `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle.
 - `src/main/inventory`: product repository/service and stock-ledger service; product and stock mutations use transactions, audit snapshots and durable outbox events.
 - `src/main/checkout/checkout-service.ts`: atomic sale completion, stock validation/deduction, payment splits/change, immutable line/receipt snapshots and idempotency keys.
+- `src/main/checkout/sales-service.ts`: counter-scoped sales search, date filters, receipt listing and detail retrieval.
+- `src/renderer/src/components/sales/ReceiptPreview.vue`: shared receipt preview for checkout and sales history, with a standard system print dialog and 80 mm print CSS.
 - `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
 
@@ -40,7 +42,7 @@
 - Applied payment amounts must exactly equal the sale total. Cash tendered may exceed its applied amount and change is recorded; non-cash tendered amount must match its applied amount. Split payments are supported.
 - Every checkout request carries a UUID idempotency key and a request hash. A retry with the same key/payload returns the original sale; a different payload using that key is rejected.
 - Sale, line snapshots, payments, stock movements, receipt snapshot, audit event and outbox event commit together or roll back together.
-- Receipt snapshot data is stored, but physical thermal printing and receipt-layout settings are not yet connected. Schema migration v2 adds sale idempotency, cash tender/change fields and immutable receipt snapshot storage.
+- Receipt snapshot data is stored, but direct printer selection/configuration and device-specific thermal printer acceptance tests remain outstanding; the saved receipt can be opened in the system print dialog. Schema migration v2 adds sale idempotency, cash tender/change fields and immutable receipt snapshot storage.
 
 ## Local persistence
 

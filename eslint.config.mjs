@@ -22,8 +22,13 @@ export default [
     },
   },
   {
-    files: ['src/renderer/src/views/InventoryView.vue', 'src/renderer/src/views/CheckoutView.vue'],
-    // Prettier formats wrapped inline Vue text differently from these template layout rules in the dense inventory and checkout templates.
+    files: [
+      'src/renderer/src/views/InventoryView.vue',
+      'src/renderer/src/views/CheckoutView.vue',
+      'src/renderer/src/views/SalesHistoryView.vue',
+      'src/renderer/src/components/sales/ReceiptPreview.vue',
+    ],
+    // Prettier formats wrapped inline Vue text differently from these template layout rules in the dense inventory, checkout and sales templates.
     rules: {
       'vue/html-indent': 'off',
       'vue/multiline-html-element-content-newline': 'off',
