@@ -8,6 +8,11 @@ import type { SaveBusinessSettings } from '../shared/contracts/settings';
 import type { BackupResult, RestoreResult } from '../shared/contracts/backup';
 import type { ReportQuery } from '../shared/contracts/reports';
 import type {
+  PurchaseOrderInput,
+  ReceivePurchaseOrderInput,
+  SupplierInput,
+} from '../shared/contracts/purchasing';
+import type {
   AuthCredentials,
   CreateUserInput,
   ResetUserPasswordInput,
@@ -19,6 +24,14 @@ const api: NouvoApi = Object.freeze({
   getRuntimeStatus: () => ipcRenderer.invoke('app:get-runtime-status', {}),
   getSalesReport: (query?: ReportQuery) =>
     ipcRenderer.invoke('reports:get-sales-report', query ?? {}),
+  listSuppliers: () => ipcRenderer.invoke('purchasing:list-suppliers'),
+  saveSupplier: (input: SupplierInput) => ipcRenderer.invoke('purchasing:save-supplier', input),
+  listPurchaseOrders: () => ipcRenderer.invoke('purchasing:list-orders'),
+  createPurchaseOrder: (input: PurchaseOrderInput) =>
+    ipcRenderer.invoke('purchasing:create-order', input),
+  receivePurchaseOrder: (input: ReceivePurchaseOrderInput) =>
+    ipcRenderer.invoke('purchasing:receive-order', input),
+  cancelPurchaseOrder: (id: string) => ipcRenderer.invoke('purchasing:cancel-order', id),
   listProducts: (query?: Partial<ProductListQuery>) =>
     ipcRenderer.invoke('inventory:list-products', query ?? {}),
   saveProduct: (input: ProductInput) => ipcRenderer.invoke('inventory:save-product', input),

@@ -2410,3 +2410,201 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+.purchasing-page {
+  display: grid;
+  gap: 20px;
+}
+.purchasing-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.purchasing-card,
+.purchasing-orders-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.purchasing-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 22px 16px;
+}
+.purchasing-card-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.purchasing-card-heading p {
+  margin: 5px 0 0;
+  color: var(--text-muted, #737b8c);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.purchasing-card-heading > span {
+  color: var(--text-muted, #737b8c);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.purchasing-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 22px 18px;
+}
+.purchasing-field-wide {
+  grid-column: 1 / -1;
+}
+.purchasing-form-grid > button {
+  justify-self: start;
+}
+.purchasing-supplier-list {
+  border-top: 1px solid var(--border-color, #e6e9f0);
+  padding: 10px 22px;
+  max-height: 220px;
+  overflow: auto;
+}
+.purchasing-supplier-list > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.purchasing-supplier-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #e8eafe;
+  color: #5145cd;
+  font-weight: 800;
+}
+.purchasing-supplier-list strong,
+.purchasing-supplier-list small {
+  display: block;
+}
+.purchasing-supplier-list strong {
+  font-size: 13px;
+}
+.purchasing-supplier-list small {
+  margin-top: 3px;
+  color: var(--text-muted, #737b8c);
+  font-size: 12px;
+}
+.purchasing-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted, #737b8c);
+  font-size: 13px;
+}
+.purchasing-notice {
+  margin: 0 22px 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff7e8;
+  color: #925f13;
+  font-size: 12px;
+}
+.purchasing-lines-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 22px 10px;
+}
+.purchasing-lines-heading strong {
+  font-size: 13px;
+}
+.purchasing-lines-heading button {
+  border: 0;
+  background: transparent;
+  color: var(--color-primary, #4f46e5);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.purchasing-lines-heading button:disabled {
+  opacity: 0.5;
+}
+.purchasing-order-line {
+  display: grid;
+  grid-template-columns: minmax(150px, 2fr) minmax(70px, 0.7fr) minmax(110px, 1fr) 24px;
+  gap: 9px;
+  align-items: end;
+  padding: 10px 22px;
+  border-top: 1px solid var(--border-color, #e6e9f0);
+}
+.purchasing-order-line .inventory-field {
+  min-width: 0;
+}
+.purchasing-remove-line {
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #b91c1c;
+  font-size: 22px;
+  cursor: pointer;
+}
+.purchasing-order-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  margin-top: 8px;
+  background: var(--surface-subtle, #f8f9fc);
+}
+.purchasing-order-total span {
+  color: var(--text-muted, #737b8c);
+  font-size: 13px;
+}
+.purchasing-order-total strong {
+  font-size: 20px;
+}
+.purchasing-create-action {
+  padding: 0 22px 22px;
+}
+.purchasing-invoice {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted, #737b8c);
+  font-size: 11px;
+}
+.purchasing-status {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.purchasing-status--draft {
+  background: #fff4d7;
+  color: #8a5b00;
+}
+.purchasing-status--received {
+  background: #dff7eb;
+  color: #13734d;
+}
+.purchasing-status--cancelled {
+  background: #fee8e7;
+  color: #b42318;
+}
+@media (max-width: 1100px) {
+  .purchasing-setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .purchasing-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .purchasing-order-line {
+    grid-template-columns: 1fr 1fr;
+  }
+  .purchasing-product-field {
+    grid-column: 1 / -1;
+  }
+}

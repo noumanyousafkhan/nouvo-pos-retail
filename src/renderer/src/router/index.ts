@@ -1,6 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import DashboardView from '@/views/DashboardView.vue';
-import FeaturePlaceholderView from '@/views/FeaturePlaceholderView.vue';
 import InventoryView from '@/views/InventoryView.vue';
 import CheckoutView from '@/views/CheckoutView.vue';
 import SalesHistoryView from '@/views/SalesHistoryView.vue';
@@ -9,6 +8,7 @@ import LoginView from '@/views/LoginView.vue';
 import SetupView from '@/views/SetupView.vue';
 import ForbiddenView from '@/views/ForbiddenView.vue';
 import ReportsView from '@/views/ReportsView.vue';
+import PurchasingView from '@/views/PurchasingView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -78,7 +78,7 @@ export const router = createRouter({
     {
       path: '/purchasing',
       name: 'purchasing',
-      component: FeaturePlaceholderView,
+      component: PurchasingView,
       meta: {
         title: 'Purchasing',
         description: 'Suppliers, purchase orders and goods receiving.',

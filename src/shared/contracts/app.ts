@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ProductApi } from './products';
 import type { AuthApi } from './auth';
 import type { ReportsApi } from './reports';
+import type { PurchasingApi } from './purchasing';
 
 export const EmptyPayloadSchema = z.object({}).strict();
 
@@ -21,7 +22,7 @@ export const RuntimeStatusSchema = z.object({
 export type AppInfo = z.infer<typeof AppInfoSchema>;
 export type RuntimeStatus = z.infer<typeof RuntimeStatusSchema>;
 
-export interface NouvoApi extends ProductApi, AuthApi, ReportsApi {
+export interface NouvoApi extends ProductApi, AuthApi, ReportsApi, PurchasingApi {
   getAppInfo(): Promise<AppInfo>;
   getRuntimeStatus(): Promise<RuntimeStatus>;
 }

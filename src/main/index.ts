@@ -10,6 +10,7 @@ import { registerSettingsIpcHandlers } from './ipc/register-settings-handlers';
 import { registerBackupIpcHandlers } from './ipc/register-backup-handlers';
 import { registerAuthIpcHandlers } from './ipc/register-auth-handlers';
 import { registerReportsIpcHandlers } from './ipc/register-reports-handlers';
+import { registerPurchasingIpcHandlers } from './ipc/register-purchasing-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -80,6 +81,7 @@ app
       registerSettingsIpcHandlers();
       registerBackupIpcHandlers();
       registerReportsIpcHandlers();
+      registerPurchasingIpcHandlers();
     }
     createMainWindow();
     app.on('activate', () => {

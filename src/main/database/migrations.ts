@@ -255,6 +255,67 @@ export const migrations: Migration[] = [
       CREATE INDEX auth_attempts_username_time_idx ON auth_login_attempts(username, attempted_at DESC);
     `,
   },
+  {
+    version: 5,
+    name: 'supplier_purchasing_and_receiving',
+    sql: `
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','purchasing.manage'),('manager','purchasing.manage'),('inventory_manager','purchasing.manage');
+
+      CREATE TABLE suppliers (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        tax_number TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, name)
+      ) STRICT;
+      CREATE INDEX suppliers_store_active_idx ON suppliers(store_id, is_active, name COLLATE NOCASE);
+
+      CREATE TABLE purchase_orders (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        order_number TEXT NOT NULL,
+        supplier_invoice_number TEXT,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','received','cancelled')),
+        notes TEXT,
+        subtotal_minor INTEGER NOT NULL CHECK (subtotal_minor >= 0),
+        created_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        received_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        ordered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        received_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, order_number),
+        UNIQUE (store_id, supplier_invoice_number)
+      ) STRICT;
+      CREATE INDEX purchase_orders_store_time_idx ON purchase_orders(store_id, ordered_at DESC);
+      CREATE INDEX purchase_orders_status_idx ON purchase_orders(store_id, status, ordered_at DESC);
+
+      CREATE TABLE purchase_order_lines (
+        id TEXT PRIMARY KEY,
+        purchase_order_id TEXT NOT NULL REFERENCES purchase_orders(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_id TEXT NOT NULL REFERENCES products(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        product_name_snapshot TEXT NOT NULL,
+        sku_snapshot TEXT,
+        unit_snapshot TEXT NOT NULL,
+        quantity_ordered_milli INTEGER NOT NULL CHECK (quantity_ordered_milli > 0),
+        quantity_received_milli INTEGER NOT NULL DEFAULT 0 CHECK (quantity_received_milli >= 0 AND quantity_received_milli <= quantity_ordered_milli),
+        unit_cost_minor INTEGER NOT NULL CHECK (unit_cost_minor >= 0),
+        line_total_minor INTEGER NOT NULL CHECK (line_total_minor >= 0),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX purchase_order_lines_order_idx ON purchase_order_lines(purchase_order_id);
+      CREATE INDEX purchase_order_lines_product_idx ON purchase_order_lines(product_id);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

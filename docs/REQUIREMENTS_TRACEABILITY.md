@@ -23,21 +23,22 @@ This document separates implemented code from acceptance-tested behavior. A data
 ## Verification run during this work session
 
 - `npm run typecheck`: passed after authentication and report changes.
-- `npm test`: **40 tests across 11 test files passed**.
+- `npm test`: **43 tests across 12 test files passed**.
 - `npm run lint`: passed with zero warnings.
 - `npm run format:check`: passed.
 - `npm audit --omit=dev`: 0 production dependency vulnerabilities at last run.
 - `npm run build`: passed after the latest reports, dashboard and staff-management UI changes.
-- `npm run build:app -- --dir`: Linux unpacked app packaging passed.
+- `npm run build:app -- --dir`: Linux unpacked app packaging passed after schema v5 and the purchasing module were added.
+- Windows NSIS packaging was attempted; electron-builder failed while resolving `github.com` (`EAI_AGAIN`). The Windows installer has not been produced or verified; retry when network/DNS access is available.
 - Packaged Electron smoke test under Xvfb passed first-run owner setup, dashboard, Reports, Inventory, Checkout and Settings routes, plus creating a staff account through authenticated IPC.
 - Node emits an experimental warning for `node:sqlite`. A stable driver and actual packaged Electron compatibility across target operating systems are not yet verified.
 
 ## Not yet complete — do not treat this build as production-ready
 
-- Purchasing workflow: suppliers, purchase orders, goods receiving, supplier invoices, purchase returns and purchase-cost/stock posting.
+- Purchasing gaps: supplier purchase returns, supplier balance tracking, supplier invoice reconciliation and accounting journal posting. Basic suppliers, draft purchase orders, receiving and cancellation are implemented and service-tested. The latest purchasing UI still needs a dedicated packaged-app interaction smoke test.
 - Returns, refunds, sale voids, shift/cashier sessions and cash reconciliation/variance.
 - Double-entry accounting: chart of accounts, posting matrix, journal integrity, inventory valuation and financial statements.
-- Central service/database, counter provisioning/stock allocation, background sync worker, retry policy and conflict resolution. `outbox_events` is storage groundwork, not a working sync system.
+- Central service/database, counter provisioning/stock allocation, background sync worker, retry policy and conflict resolution. `outbox_events` is storage groundwork for these workflows, not a working sync system.
 - Full branding acceptance: logo asset management, historical receipt branding verification and direct thermal-printer hardware testing.
 - Report gaps: no cashier/category/gross-margin/accounting reports yet; stock value is an estimate using current purchase cost, not approved moving weighted-average accounting valuation. Returns and purchases are excluded.
 - End-to-end acceptance on real store data, Windows installer/update tests, Linux packaged install test, normal sandboxed launch verification and peripheral/hardware testing.
