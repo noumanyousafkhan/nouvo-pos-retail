@@ -75,6 +75,18 @@
 - [x] Electron UI smoke test created a product via preload IPC and verified that it remained visible after app restart.
 - [ ] Role-based authorization is not yet implemented; do not use this build for production operations.
 
+## Phase 4 checkout checklist
+
+- [x] Checkout screen with product search, barcode/SKU exact-scan add, stock-aware cart and quantity editing.
+- [x] Sale totals calculated from authoritative product prices and tax rates in the main process.
+- [x] Split payments with exact applied-total validation and cash change tracking.
+- [x] Atomic stock deduction, sale lines with product snapshots, payment records and receipt snapshot.
+- [x] UUID idempotency key plus request hash prevents duplicate sales on retry.
+- [x] Audit and outbox event recorded in the same transaction as the sale.
+- [x] Version 2 migration adds idempotency fields, cash tender/change values and immutable receipt snapshot storage.
+- [x] Automated tests cover successful checkout, split payment, change, idempotent retry, conflicting retries, insufficient stock and mismatched payments.
+- [ ] Thermal receipt printing, tax-inclusive/exclusive setup, returns/voids and cashier sessions remain incomplete.
+
 ## Security audit note
 
 - `npm audit --omit=dev`: **0 vulnerabilities** in production dependencies at the last verification.
@@ -82,4 +94,4 @@
 
 ## Current status
 
-Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 21 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product/stock UI smoke tests and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, checkout, payments, central synchronization, accounting, full branding setup, receipt printing, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing.
+Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 26 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product/stock/checkout UI smoke tests and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, central synchronization, accounting, full branding setup, thermal printing, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing. Tax-inclusive pricing and production tax setup also remain acceptance gates.

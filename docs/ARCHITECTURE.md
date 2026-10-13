@@ -4,11 +4,12 @@
 
 - `src/renderer/src`: Vue UI only. No Node.js, filesystem, shell or direct database access.
 - `src/preload`: small allowlisted bridge exposed through `contextBridge`. Only typed application operations are exposed.
-- `src/main`: Electron lifecycle, IPC handlers, logging, local database and inventory domain services.
+- `src/main`: Electron lifecycle, IPC handlers, logging, local database, inventory and checkout domain services.
 - `src/shared`: schemas and types shared across trusted process boundaries.
 - `src/server`: reserved for the central Node.js/PostgreSQL service; not yet implemented.
 - `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle.
 - `src/main/inventory`: product repository/service and stock-ledger service; product and stock mutations use transactions, audit snapshots and durable outbox events.
+- `src/main/checkout/checkout-service.ts`: atomic sale completion, stock validation/deduction, payment splits/change, immutable line/receipt snapshots and idempotency keys.
 - `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
 
@@ -31,6 +32,15 @@
 - Product creation/editing preserves transaction history. Archiving deactivates the row rather than deleting it. SKU and barcode conflicts return actionable errors.
 - Stock receipts, adjustments and write-offs are ledger entries, never direct quantity edits. Negative on-hand stock is blocked. Stock changes are audited and written to the sync outbox in the same transaction.
 - Base-unit changes are blocked after stock movements or sale lines exist; a dedicated controlled conversion workflow is required.
+
+## Checkout rules
+
+- The checkout service re-reads active product prices, tax rates and counter stock inside a write transaction; the renderer cart is never authoritative.
+- The first implementation treats configured tax rates as tax-exclusive and rounds tax per line to the currency minor unit. Tax-included pricing/configuration remains a setup requirement before production.
+- Applied payment amounts must exactly equal the sale total. Cash tendered may exceed its applied amount and change is recorded; non-cash tendered amount must match its applied amount. Split payments are supported.
+- Every checkout request carries a UUID idempotency key and a request hash. A retry with the same key/payload returns the original sale; a different payload using that key is rejected.
+- Sale, line snapshots, payments, stock movements, receipt snapshot, audit event and outbox event commit together or roll back together.
+- Receipt snapshot data is stored, but physical thermal printing and receipt-layout settings are not yet connected. Schema migration v2 adds sale idempotency, cash tender/change fields and immutable receipt snapshot storage.
 
 ## Local persistence
 

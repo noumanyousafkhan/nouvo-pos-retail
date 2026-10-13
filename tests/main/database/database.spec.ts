@@ -39,7 +39,10 @@ describe('local SQLite database foundation', () => {
       const versions = database.connection
         .prepare('SELECT version, name FROM schema_migrations ORDER BY version')
         .all();
-      expect(versions).toEqual([{ version: 1, name: 'initial_counter_schema' }]);
+      expect(versions).toEqual([
+        { version: 1, name: 'initial_counter_schema' },
+        { version: 2, name: 'sale_receipt_and_idempotency' },
+      ]);
       expect(
         database.connection
           .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='outbox_events'")
@@ -48,7 +51,7 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 1 });
+      ).toEqual({ count: 2 });
     } finally {
       database.close();
     }

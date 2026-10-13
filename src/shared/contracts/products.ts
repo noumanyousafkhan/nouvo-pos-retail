@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { StockApi } from './stock';
+import type { CheckoutApi } from './checkout';
 
 export const ProductIdSchema = z.string().uuid();
 const barcodeSchema = z.string().trim().min(1).max(80);
@@ -45,7 +46,7 @@ export type ProductInput = z.infer<typeof ProductInputSchema>;
 export type Product = z.infer<typeof ProductSchema>;
 export type ProductListQuery = z.infer<typeof ProductListQuerySchema>;
 
-export interface ProductApi extends StockApi {
+export interface ProductApi extends StockApi, CheckoutApi {
   listProducts(query?: Partial<ProductListQuery>): Promise<Product[]>;
   saveProduct(input: ProductInput): Promise<Product>;
   archiveProduct(id: string, reason?: string): Promise<void>;

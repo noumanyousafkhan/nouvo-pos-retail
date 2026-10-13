@@ -183,6 +183,27 @@ export const migrations: Migration[] = [
       CREATE INDEX audit_entity_time_idx ON audit_events(entity_type, entity_id, created_at DESC);
     `,
   },
+  {
+    version: 2,
+    name: 'sale_receipt_and_idempotency',
+    sql: `
+      ALTER TABLE sales ADD COLUMN idempotency_key TEXT;
+      ALTER TABLE sales ADD COLUMN request_hash TEXT;
+      ALTER TABLE sales ADD COLUMN change_due_minor INTEGER NOT NULL DEFAULT 0 CHECK (change_due_minor >= 0);
+      CREATE UNIQUE INDEX sales_idempotency_key_unique ON sales(idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+      ALTER TABLE sale_payments ADD COLUMN amount_tendered_minor INTEGER NOT NULL DEFAULT 0 CHECK (amount_tendered_minor >= 0);
+      ALTER TABLE sale_payments ADD COLUMN change_due_minor INTEGER NOT NULL DEFAULT 0 CHECK (change_due_minor >= 0);
+
+      CREATE TABLE receipt_snapshots (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL UNIQUE REFERENCES sales(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        business_profile_json TEXT NOT NULL CHECK (json_valid(business_profile_json)),
+        receipt_config_json TEXT NOT NULL CHECK (json_valid(receipt_config_json)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+    `,
+  },
 ];
 
 export function migrationChecksum(migration: Migration): string {

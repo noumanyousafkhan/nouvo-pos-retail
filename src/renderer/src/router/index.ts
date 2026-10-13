@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import DashboardView from '@/views/DashboardView.vue';
 import FeaturePlaceholderView from '@/views/FeaturePlaceholderView.vue';
 import InventoryView from '@/views/InventoryView.vue';
+import CheckoutView from '@/views/CheckoutView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -15,11 +16,11 @@ export const router = createRouter({
     {
       path: '/checkout',
       name: 'checkout',
-      component: FeaturePlaceholderView,
+      component: CheckoutView,
       meta: {
         title: 'Checkout',
         description:
-          'Barcode-first checkout and payments will be implemented in a dedicated milestone.',
+          'Barcode-first checkout with stock validation, split payments and durable sale receipts.',
         module: 'Checkout',
       },
     },
