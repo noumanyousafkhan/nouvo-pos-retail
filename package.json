@@ -1,0 +1,75 @@
+{
+  "name": "nouvo-pos-cash-carry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first desktop POS for cash-and-carry retail stores",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && npm run test && electron-vite build",
+    "build:app": "npm run build && electron-builder",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.electron.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src electron.vite.config.ts vitest.config.ts eslint.config.mjs --max-warnings=0",
+    "format:check": "prettier --check src tests docs *.json *.ts *.mjs *.md",
+    "format": "prettier --write src tests docs *.json *.ts *.mjs *.md",
+    "preview": "electron-vite preview"
+  },
+  "build": {
+    "appId": "com.nouvo.pos.cashcarry",
+    "productName": "NOUVO POS Cash & Carry",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office"
+    }
+  },
+  "dependencies": {
+    "pinia": "4.0.3",
+    "pino": "10.4.0",
+    "vue": "3.5.44",
+    "vue-router": "5.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-vue": "6.0.10",
+    "@vue/test-utils": "2.5.1",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-vue": "10.11.1",
+    "globals": "17.13.0",
+    "jsdom": "30.1.2",
+    "prettier": "3.9.10",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.4",
+    "vue-eslint-parser": "10.4.1",
+    "vue-tsc": "3.3.13"
+  }
+}
