@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import DashboardView from '@/views/DashboardView.vue';
 import FeaturePlaceholderView from '@/views/FeaturePlaceholderView.vue';
+import InventoryView from '@/views/InventoryView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -25,7 +26,7 @@ export const router = createRouter({
     {
       path: '/inventory',
       name: 'inventory',
-      component: FeaturePlaceholderView,
+      component: InventoryView,
       meta: {
         title: 'Inventory',
         description: 'Product catalogue, pricing history and stock controls.',

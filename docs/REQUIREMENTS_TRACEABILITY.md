@@ -61,6 +61,18 @@
 - [ ] Node `node:sqlite` remains experimental; evaluate stable native driver and test Electron rebuilds for Windows/Linux before production.
 - [ ] Database schema does not yet imply implemented checkout, inventory workflows, accounting, sync or backup features.
 
+## Phase 3 product catalogue checklist
+
+- [x] Product list and search by name, SKU and barcode.
+- [x] Product create/edit UI with category, description, unit, cost, selling price, tax and multiple barcodes.
+- [x] SKU and barcode uniqueness enforced by the database and reported as actionable errors.
+- [x] Product changes and archive actions create audit events with before/after snapshots.
+- [x] Products are archived rather than hard-deleted.
+- [x] Base-unit changes blocked after stock movement or sale history exists.
+- [x] Transactional service tests cover create, update, archive, duplicate identifiers, audit history and rollback.
+- [x] Electron UI smoke test created a product via preload IPC and verified that it remained visible after app restart.
+- [ ] Role-based authorization is not yet implemented; do not use this build for production operations.
+
 ## Security audit note
 
 - `npm audit --omit=dev`: **0 vulnerabilities** in production dependencies at the last verification.
@@ -68,4 +80,4 @@
 
 ## Current status
 
-Phase 1 source foundation and Phase 2 local database foundation are implemented. Typecheck, 11 unit tests, lint, formatting, production build, and an Electron 44 Linux database initialization smoke test have passed. This is not a production POS yet. Stable SQLite driver selection, inventory services/UI, checkout, central synchronization, accounting, branding workflows, receipt printing, backup/restore, hardware and packaging still require implementation and acceptance testing.
+Phase 1 source foundation, Phase 2 local database foundation and Phase 3 product catalogue CRUD are implemented. Typecheck, 18 unit tests, lint, formatting, production build, Electron 44 Linux database initialization, product-create UI and restart-persistence smoke tests have passed. This is not a production POS yet. Stable SQLite driver selection, stock receiving/adjustments, checkout, payments, central synchronization, accounting, full branding setup, receipt printing, backup/restore, role-based authorization, hardware and packaging still require implementation and acceptance testing.

@@ -4,10 +4,12 @@
 
 - `src/renderer/src`: Vue UI only. No Node.js, filesystem, shell or direct database access.
 - `src/preload`: small allowlisted bridge exposed through `contextBridge`. Only typed application operations are exposed.
-- `src/main`: Electron lifecycle, IPC handlers, logging and privileged desktop integrations.
+- `src/main`: Electron lifecycle, IPC handlers, logging, local database and inventory domain services.
 - `src/shared`: schemas and types shared across trusted process boundaries.
 - `src/server`: reserved for the central Node.js/PostgreSQL service; not yet implemented.
-- `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle. Business repositories and domain services are added as separate modules. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
+- `src/main/database`: local SQLite connection, checksum-verified migrations, transaction helper, and database lifecycle.
+- `src/main/inventory`: product repository and domain service; product edits use transactions and audit snapshots.
+- `src/main/ipc`: separate app and inventory IPC registration modules; inputs are parsed through Zod schemas. The current Node `node:sqlite` driver is provisional because its API is still marked experimental; stable-driver evaluation is a release gate.
 - `tests`: unit/integration tests. Future end-to-end tests will exercise packaged Electron flows.
 
 ## Renderer organization
@@ -20,6 +22,14 @@
 - `composables`: reusable Vue behavior, not a home for business rules.
 - `services`: typed adapters to the preload bridge; no raw Electron IPC strings spread through screens.
 - `types` and `styles`: renderer type augmentation and design tokens.
+
+## Inventory module
+
+- `src/shared/contracts/products.ts` defines product inputs/outputs and list query schemas used at the renderer/main boundary.
+- `src/main/inventory/product-repository.ts` owns SQL queries; `product-service.ts` owns validation-adjacent business rules, transaction boundaries and audit events.
+- `src/renderer/src/views/InventoryView.vue` owns the catalogue UI only; it calls the typed preload bridge and never queries SQLite directly.
+- Product creation/editing preserves transaction history. Archiving deactivates the row rather than deleting it. SKU and barcode conflicts return actionable errors.
+- Base-unit changes are blocked after stock movements or sale lines exist; a dedicated controlled conversion workflow is required.
 
 ## Local persistence
 

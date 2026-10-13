@@ -22,6 +22,14 @@ export default [
     },
   },
   {
+    files: ['src/renderer/src/views/InventoryView.vue'],
+    // Prettier formats wrapped inline Vue text differently from these template layout rules.
+    rules: {
+      'vue/html-indent': 'off',
+      'vue/multiline-html-element-content-newline': 'off',
+    },
+  },
+  {
     files: ['**/*.js', '**/*.ts', '**/*.vue'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node, ...globals.es2022 },

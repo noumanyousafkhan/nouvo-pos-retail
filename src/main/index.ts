@@ -2,7 +2,8 @@ import { app, BrowserWindow, session } from 'electron';
 import { join } from 'node:path';
 import { logger } from './services/logger';
 import { registerAppIpcHandlers } from './ipc/register-app-handlers';
-import { closeLocalDatabase, initializeLocalDatabase } from './database';
+import { closeLocalDatabase, getLocalDatabaseStatus, initializeLocalDatabase } from './database';
+import { registerInventoryIpcHandlers } from './ipc/register-inventory-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -65,6 +66,7 @@ app
       // Keep the shell available so the UI can report the database failure and recovery guidance.
     }
     registerAppIpcHandlers();
+    if (getLocalDatabaseStatus() === 'ready') registerInventoryIpcHandlers();
     createMainWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

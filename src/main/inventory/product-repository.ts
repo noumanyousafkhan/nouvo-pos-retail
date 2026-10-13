@@ -1,0 +1,136 @@
+import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
+import type { Product, ProductInput } from '../../shared/contracts/products';
+
+interface ProductRow {
+  id: string;
+  name: string;
+  description: string | null;
+  categoryName: string | null;
+  sku: string | null;
+  barcodes: string | null;
+  baseUnit: string;
+  purchaseCostMinor: number;
+  sellingPriceMinor: number;
+  taxRateBasisPoints: number;
+  isActive: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? '',
+    categoryName: row.categoryName ?? '',
+    sku: row.sku,
+    barcodes: row.barcodes ? row.barcodes.split('\u001f') : [],
+    baseUnit: row.baseUnit,
+    purchaseCostMinor: row.purchaseCostMinor,
+    sellingPriceMinor: row.sellingPriceMinor,
+    taxRateBasisPoints: row.taxRateBasisPoints,
+    isActive: row.isActive === 1,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+const productSelect = `
+  SELECT p.id, p.name, p.description, c.name AS categoryName, p.sku,
+         (SELECT group_concat(barcode, char(31)) FROM product_barcodes pb WHERE pb.product_id = p.id) AS barcodes,
+         p.base_unit AS baseUnit, p.purchase_cost_minor AS purchaseCostMinor,
+         p.selling_price_minor AS sellingPriceMinor, p.tax_rate_basis_points AS taxRateBasisPoints,
+         p.is_active AS isActive, p.created_at AS createdAt, p.updated_at AS updatedAt
+  FROM products p LEFT JOIN categories c ON c.id = p.category_id
+`;
+
+export class ProductRepository {
+  constructor(private readonly database: DatabaseSync) {}
+
+  list(storeId: string, search: string, includeArchived: boolean): Product[] {
+    const conditions = ['p.store_id = ?'];
+    const params: (string | number)[] = [storeId];
+    if (!includeArchived) conditions.push('p.is_active = 1');
+    if (search) {
+      conditions.push(`(p.name LIKE ? ESCAPE '\\' OR COALESCE(p.sku, '') LIKE ? ESCAPE '\\' OR EXISTS (
+        SELECT 1 FROM product_barcodes pb2 WHERE pb2.product_id = p.id AND pb2.barcode LIKE ? ESCAPE '\\'
+      ))`);
+      const escaped = search.replace(/[\\%_]/g, '\\$&');
+      params.push(`%${escaped}%`, `%${escaped}%`, `%${escaped}%`);
+    }
+    const rows = this.database
+      .prepare(
+        `${productSelect} WHERE ${conditions.join(' AND ')} ORDER BY p.name COLLATE NOCASE LIMIT 1000`,
+      )
+      .all(...params) as unknown as ProductRow[];
+    return rows.map(mapProduct);
+  }
+
+  findById(storeId: string, id: string): Product | null {
+    const row = this.database
+      .prepare(`${productSelect} WHERE p.store_id = ? AND p.id = ?`)
+      .get(storeId, id) as ProductRow | undefined;
+    return row ? mapProduct(row) : null;
+  }
+
+  save(storeId: string, input: ProductInput, id: string, categoryId: string | null): Product {
+    const now = new Date().toISOString();
+    const sku = input.sku || null;
+    if (input.id) {
+      this.database
+        .prepare(
+          `UPDATE products SET category_id = ?, sku = ?, name = ?, description = ?, base_unit = ?, purchase_cost_minor = ?, selling_price_minor = ?, tax_rate_basis_points = ?, updated_at = ? WHERE id = ? AND store_id = ?`,
+        )
+        .run(
+          categoryId,
+          sku,
+          input.name,
+          input.description || null,
+          input.baseUnit,
+          input.purchaseCostMinor,
+          input.sellingPriceMinor,
+          input.taxRateBasisPoints,
+          now,
+          input.id,
+          storeId,
+        );
+      this.database.prepare('DELETE FROM product_barcodes WHERE product_id = ?').run(input.id);
+    } else {
+      this.database
+        .prepare(
+          `INSERT INTO products (id, store_id, category_id, sku, name, description, base_unit, purchase_cost_minor, selling_price_minor, tax_rate_basis_points, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          storeId,
+          categoryId,
+          sku,
+          input.name,
+          input.description || null,
+          input.baseUnit,
+          input.purchaseCostMinor,
+          input.sellingPriceMinor,
+          input.taxRateBasisPoints,
+          now,
+          now,
+        );
+    }
+    const productId = input.id ?? id;
+    const insertBarcode = this.database.prepare(
+      'INSERT INTO product_barcodes (id, product_id, barcode) VALUES (?, ?, ?)',
+    );
+    for (const barcode of input.barcodes) insertBarcode.run(randomUUID(), productId, barcode);
+    const product = this.findById(storeId, productId);
+    if (!product) throw new Error('Saved product could not be reloaded.');
+    return product;
+  }
+
+  archive(storeId: string, id: string): void {
+    this.database
+      .prepare(
+        `UPDATE products SET is_active = 0, archived_at = ?, updated_at = ? WHERE store_id = ? AND id = ? AND is_active = 1`,
+      )
+      .run(new Date().toISOString(), new Date().toISOString(), storeId, id);
+  }
+}
