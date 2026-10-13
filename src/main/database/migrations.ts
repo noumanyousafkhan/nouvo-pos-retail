@@ -429,6 +429,60 @@ export const migrations: Migration[] = [
       CREATE INDEX sale_returns_cashier_session_idx ON sale_returns(cashier_session_id, created_at);
     `,
   },
+  {
+    version: 8,
+    name: 'double_entry_accounting_ledger',
+    sql: `
+      INSERT OR IGNORE INTO role_permissions (role, permission) VALUES
+        ('owner','accounting.view'),('owner','accounting.manage'),('manager','accounting.view');
+
+      CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        code TEXT NOT NULL CHECK (length(trim(code)) BETWEEN 3 AND 12),
+        name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+        account_type TEXT NOT NULL CHECK (account_type IN ('asset','liability','equity','income','expense')),
+        normal_balance TEXT NOT NULL CHECK (normal_balance IN ('debit','credit')),
+        is_system INTEGER NOT NULL DEFAULT 1 CHECK (is_system IN (0,1)),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, code),
+        UNIQUE (store_id, name)
+      ) STRICT;
+      CREATE INDEX accounts_store_type_idx ON accounts(store_id, account_type, code);
+
+      CREATE TABLE journal_entries (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        entry_number TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('sale','sale_return','purchase_receipt','manual','reversal')),
+        source_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'posted' CHECK (status IN ('posted','reversed')),
+        currency_code TEXT NOT NULL CHECK (length(currency_code) = 3),
+        description TEXT NOT NULL,
+        posted_by_user_id TEXT REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        posted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        UNIQUE (store_id, entry_number),
+        UNIQUE (store_id, source_type, source_id)
+      ) STRICT;
+      CREATE INDEX journal_entries_store_time_idx ON journal_entries(store_id, posted_at DESC);
+      CREATE INDEX journal_entries_source_idx ON journal_entries(source_type, source_id);
+
+      CREATE TABLE journal_lines (
+        id TEXT PRIMARY KEY,
+        journal_entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        line_number INTEGER NOT NULL CHECK (line_number > 0),
+        debit_minor INTEGER NOT NULL DEFAULT 0 CHECK (debit_minor >= 0),
+        credit_minor INTEGER NOT NULL DEFAULT 0 CHECK (credit_minor >= 0),
+        memo TEXT NOT NULL DEFAULT '',
+        CHECK ((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0)),
+        UNIQUE (journal_entry_id, line_number)
+      ) STRICT;
+      CREATE INDEX journal_lines_account_idx ON journal_lines(account_id, journal_entry_id);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

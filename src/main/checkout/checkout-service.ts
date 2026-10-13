@@ -7,6 +7,7 @@ import {
   type SaleResult,
 } from '../../shared/contracts/checkout';
 import { runInTransaction } from '../database/connection';
+import { AccountingService } from '../accounting/accounting-service';
 
 interface ProductForSale {
   id: string;
@@ -299,6 +300,7 @@ export class CheckoutService {
           saleId,
           JSON.stringify({ schemaVersion: 1, sale: result, idempotencyKey: input.idempotencyKey }),
         );
+      new AccountingService(this.database, this.storeId).postSale(saleId);
       return SaleResultSchema.parse(result);
     });
   }

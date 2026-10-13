@@ -10,6 +10,7 @@ import ForbiddenView from '@/views/ForbiddenView.vue';
 import ReportsView from '@/views/ReportsView.vue';
 import PurchasingView from '@/views/PurchasingView.vue';
 import CashSessionsView from '@/views/CashSessionsView.vue';
+import AccountingView from '@/views/AccountingView.vue';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -96,6 +97,17 @@ export const router = createRouter({
         description: 'Cash drawer, shift movements and reconciliation.',
         module: 'Cash control',
         permission: 'cash_session.view',
+      },
+    },
+    {
+      path: '/accounting',
+      name: 'accounting',
+      component: AccountingView,
+      meta: {
+        title: 'Accounting ledger',
+        description: 'Chart of accounts and balanced journal entries.',
+        module: 'Accounting',
+        permission: 'accounting.view',
       },
     },
     {

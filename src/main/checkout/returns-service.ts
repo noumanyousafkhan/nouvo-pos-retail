@@ -9,6 +9,7 @@ import {
   type SaleReturnResult,
 } from '../../shared/contracts/returns';
 import { runInTransaction } from '../database/connection';
+import { AccountingService } from '../accounting/accounting-service';
 
 interface SaleRow {
   id: string;
@@ -363,6 +364,7 @@ export class ReturnsService {
             })),
           }),
         );
+      new AccountingService(this.database, this.storeId, this.actorUserId).postSaleReturn(returnId);
       return this.loadResult(returnId);
     });
   }

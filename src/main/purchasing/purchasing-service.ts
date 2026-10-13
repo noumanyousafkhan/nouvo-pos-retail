@@ -10,6 +10,7 @@ import {
   type Supplier,
 } from '../../shared/contracts/purchasing';
 import { runInTransaction } from '../database/connection';
+import { AccountingService } from '../accounting/accounting-service';
 
 interface SupplierRow {
   id: string;
@@ -375,6 +376,9 @@ export class PurchasingService {
             lines: lines.length,
           }),
         );
+      new AccountingService(this.database, this.storeId, this.actorUserId).postPurchaseReceipt(
+        order.id,
+      );
       this.database
         .prepare(
           "INSERT INTO outbox_events (id, event_type, aggregate_type, aggregate_id, payload_json) VALUES (?, 'purchase_order.received', 'purchase_order', ?, ?)",

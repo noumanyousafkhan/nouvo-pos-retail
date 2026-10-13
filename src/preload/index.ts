@@ -40,6 +40,8 @@ const api: NouvoApi = Object.freeze({
   cancelPurchaseOrder: (id: string) => ipcRenderer.invoke('purchasing:cancel-order', id),
   getActiveCashierSession: () => ipcRenderer.invoke('cash-session:get-active'),
   listCashierSessions: () => ipcRenderer.invoke('cash-session:list-history'),
+  listAccountingAccounts: () => ipcRenderer.invoke('accounting:list-accounts'),
+  listAccountingJournals: () => ipcRenderer.invoke('accounting:list-journals'),
   openCashierSession: (input: OpenCashierSessionInput) =>
     ipcRenderer.invoke('cash-session:open', input),
   recordCashMovement: (input: CashMovementInput) =>

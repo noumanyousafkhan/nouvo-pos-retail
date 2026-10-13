@@ -43,7 +43,7 @@ describe('database backup validation', () => {
       storeId,
       counterId,
     });
-    expect(result).toMatchObject({ filePath: backupPath, schemaVersion: 7, integrity: 'ok' });
+    expect(result).toMatchObject({ filePath: backupPath, schemaVersion: 8, integrity: 'ok' });
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(result.sizeBytes).toBeGreaterThan(0);
     database.connection
