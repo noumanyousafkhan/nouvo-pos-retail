@@ -4,6 +4,7 @@ import BaseButton from '@/components/base/BaseButton.vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
 import type { BusinessSettings } from '@shared/contracts/settings';
+import type { AuthState, CreateUserInput, UserSummary } from '@shared/contracts/auth';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -13,6 +14,17 @@ const backupMessage = ref('');
 const backupError = ref('');
 const backupBusy = ref(false);
 const restoreBusy = ref(false);
+const authState = ref<AuthState | null>(null);
+const users = ref<UserSummary[]>([]);
+const userError = ref('');
+const userMessage = ref('');
+const userBusy = ref(false);
+const newUser = reactive({
+  username: '',
+  displayName: '',
+  password: '',
+  role: 'cashier' as CreateUserInput['role'],
+});
 const form = reactive({
   name: 'My Store',
   currencyCode: 'PKR',
@@ -79,6 +91,72 @@ async function restoreBackup() {
   }
 }
 
+async function loadUsers() {
+  try {
+    authState.value = await window.nouvo.getAuthState();
+    if (authState.value.permissions.includes('users.manage'))
+      users.value = await window.nouvo.listUsers();
+  } catch (error) {
+    userError.value = error instanceof Error ? error.message : 'User accounts could not be loaded.';
+  }
+}
+
+async function createUser() {
+  userBusy.value = true;
+  userError.value = '';
+  userMessage.value = '';
+  try {
+    await window.nouvo.createUser({ ...newUser });
+    newUser.username = '';
+    newUser.displayName = '';
+    newUser.password = '';
+    newUser.role = 'cashier';
+    users.value = await window.nouvo.listUsers();
+    userMessage.value = 'Staff account created successfully.';
+  } catch (error) {
+    userError.value =
+      error instanceof Error ? error.message : 'Staff account could not be created.';
+  } finally {
+    userBusy.value = false;
+  }
+}
+
+async function disableUser(user: UserSummary) {
+  if (user.id === authState.value?.user?.id) return;
+  if (
+    !window.confirm(
+      `Disable the account for ${user.displayName}? Their active sessions will be revoked.`,
+    )
+  )
+    return;
+  userError.value = '';
+  userMessage.value = '';
+  try {
+    await window.nouvo.disableUser(user.id);
+    users.value = await window.nouvo.listUsers();
+    userMessage.value = `${user.displayName}'s account has been disabled.`;
+  } catch (error) {
+    userError.value = error instanceof Error ? error.message : 'The account could not be disabled.';
+  }
+}
+
+async function resetUserPassword(user: UserSummary) {
+  const password = window.prompt(
+    `Enter a new password for ${user.username} (at least 12 characters):`,
+  );
+  if (password === null) return;
+  if (password.length < 12) {
+    userError.value = 'New password must be at least 12 characters.';
+    return;
+  }
+  try {
+    await window.nouvo.resetUserPassword({ userId: user.id, password });
+    userMessage.value = `Password reset for ${user.username}. Their active sessions were revoked.`;
+  } catch (error) {
+    userError.value = error instanceof Error ? error.message : 'Password could not be reset.';
+  }
+}
+
 async function saveSettings() {
   saving.value = true;
   errorMessage.value = '';
@@ -95,7 +173,10 @@ async function saveSettings() {
   }
 }
 
-onMounted(loadSettings);
+onMounted(() => {
+  void loadSettings();
+  void loadUsers();
+});
 </script>
 
 <template>
@@ -292,6 +373,114 @@ onMounted(loadSettings);
           <strong>Restore warning:</strong> This replaces all current local sales, stock movements
           and settings with the selected backup. Do not close the application while restore is
           running. Keep a copy of backups on a separate drive.
+        </p>
+      </BaseCard>
+
+      <BaseCard
+        v-if="authState?.permissions.includes('users.manage')"
+        class="settings-card settings-users-card"
+      >
+        <header class="settings-card-header">
+          <span class="settings-icon settings-icon--backup">♙</span>
+          <div>
+            <h2>Staff accounts & permissions</h2>
+            <p>
+              Create named staff accounts and assign a role. Disabling an account revokes its active
+              sessions.
+            </p>
+          </div>
+        </header>
+        <div v-if="userMessage" class="inventory-alert inventory-alert--success" role="status">
+          {{ userMessage }}
+        </div>
+        <div v-if="userError" class="inventory-alert inventory-alert--error" role="alert">
+          {{ userError }}
+        </div>
+        <div class="settings-user-create">
+          <label class="inventory-field"
+            >Username<input
+              v-model="newUser.username"
+              required
+              minlength="3"
+              maxlength="40"
+              pattern="[A-Za-z0-9._-]+"
+              placeholder="e.g. cashier01"
+          /></label>
+          <label class="inventory-field"
+            >Display name<input
+              v-model="newUser.displayName"
+              required
+              minlength="2"
+              maxlength="100"
+              placeholder="Staff member name"
+          /></label>
+          <label class="inventory-field"
+            >Temporary password<input
+              v-model="newUser.password"
+              required
+              minlength="12"
+              maxlength="128"
+              type="password"
+              autocomplete="new-password"
+              placeholder="At least 12 characters"
+          /></label>
+          <label class="inventory-field"
+            >Role<select v-model="newUser.role">
+              <option value="cashier">Cashier</option>
+              <option value="inventory_manager">Inventory manager</option>
+              <option value="manager">Manager</option>
+              <option value="owner">Owner</option>
+            </select></label
+          >
+          <BaseButton type="button" :loading="userBusy" @click="createUser"
+            >Create staff account</BaseButton
+          >
+        </div>
+        <div class="reports-table-wrap settings-users-table">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Staff member</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="user in users" :key="user.id">
+                <td>{{ user.displayName }}</td>
+                <td>{{ user.username }}</td>
+                <td>{{ user.role.replace('_', ' ') }}</td>
+                <td>
+                  <span
+                    :class="
+                      user.status === 'active'
+                        ? 'settings-user-status--active'
+                        : 'settings-user-status--disabled'
+                    "
+                    >{{ user.status }}</span
+                  >
+                </td>
+                <td>
+                  <div class="settings-user-actions">
+                    <button type="button" @click="resetUserPassword(user)">Reset password</button
+                    ><button
+                      v-if="user.status === 'active' && user.id !== authState?.user?.id"
+                      type="button"
+                      @click="disableUser(user)"
+                    >
+                      Disable
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="settings-warning">
+          Owner accounts have full access. Only create an owner account for a trusted administrator.
+          The last active owner cannot be disabled.
         </p>
       </BaseCard>
 

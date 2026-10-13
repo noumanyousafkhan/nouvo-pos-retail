@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { RouterLink } from 'vue-router';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
 import type { AppInfo } from '@shared/contracts/app';
@@ -16,19 +17,33 @@ onMounted(async () => {
 });
 
 const modules = [
-  { number: '01', title: 'Checkout', detail: 'Barcode-first sales flow', tone: 'lavender' },
-  { number: '02', title: 'Inventory', detail: 'Products, pricing and stock ledger', tone: 'mint' },
+  {
+    number: '01',
+    title: 'Checkout',
+    detail: 'Scan items, take payment and print receipts',
+    tone: 'lavender',
+    to: '/checkout',
+  },
+  {
+    number: '02',
+    title: 'Inventory',
+    detail: 'Manage products, prices, barcodes and stock',
+    tone: 'mint',
+    to: '/inventory',
+  },
   {
     number: '03',
     title: 'Business branding',
-    detail: 'Store identity and thermal receipts',
+    detail: 'Store identity, tax and receipt settings',
     tone: 'peach',
+    to: '/settings',
   },
   {
     number: '04',
     title: 'Sync & operations',
-    detail: 'Offline queue, backup and recovery',
+    detail: 'Sales history, reports and counter operations',
     tone: 'blue',
+    to: '/reports',
   },
 ];
 </script>
@@ -38,18 +53,19 @@ const modules = [
     <PageHeader
       eyebrow="STORE OVERVIEW"
       title="Good to see you."
-      description="Your retail workspace is being prepared. Core modules will be added and verified in milestones."
+      description="Your daily sales, product catalogue and stock controls in one offline-first workspace."
     />
     <section class="welcome-panel">
       <div class="welcome-copy">
         <span class="welcome-kicker">NOUVO POS · CASH &amp; CARRY</span>
-        <h2>A calmer, faster way to run your counter.</h2>
+        <h2>Everything your counter needs, in one place.</h2>
         <p>
-          Built around dependable offline checkout, clear stock control and a consistent experience
-          across your store.
+          Run barcode-first checkout, manage inventory, review sales and protect your data with
+          verified local backups.
         </p>
         <div class="welcome-tags">
-          <span>Offline-first</span><span>Secure by design</span><span>Modular architecture</span>
+          <span>Offline-first checkout</span><span>Stock-aware sales</span
+          ><span>Verified backups</span>
         </div>
       </div>
       <div class="welcome-illustration" aria-hidden="true">
@@ -59,8 +75,8 @@ const modules = [
           <span class="illustration-card__top">TODAY'S WORKSPACE</span
           ><span class="illustration-card__line"></span
           ><span class="illustration-card__line illustration-card__line--short"></span
-          ><span class="illustration-card__amount">Ready to build</span
-          ><span class="illustration-card__pill">FOUNDATION</span>
+          ><span class="illustration-card__amount">Counter ready</span
+          ><span class="illustration-card__pill">NOUVO POS</span>
         </div>
         <span class="floating-spark spark--one">✦</span
         ><span class="floating-spark spark--two">✧</span>
@@ -69,22 +85,29 @@ const modules = [
     <div class="section-heading">
       <div>
         <h2>Core modules</h2>
-        <p>Independent modules, connected through typed services.</p>
+        <p>Open a workspace to complete everyday store operations.</p>
       </div>
-      <span class="section-count">04 AREAS</span>
+      <span class="section-count">04 WORKSPACES</span>
     </div>
     <section class="module-grid">
-      <BaseCard v-for="item in modules" :key="item.number" :interactive="true">
-        <div class="module-card__top">
-          <span class="module-number">{{ item.number }}</span
-          ><span class="module-indicator" :class="`tone--${item.tone}`"></span>
-        </div>
-        <h3>{{ item.title }}</h3>
-        <p>{{ item.detail }}</p>
-        <div class="module-card__footer">
-          <span>Planned milestone</span><span aria-hidden="true">↗</span>
-        </div>
-      </BaseCard>
+      <RouterLink
+        v-for="item in modules"
+        :key="item.number"
+        class="dashboard-module-link"
+        :to="item.to"
+      >
+        <BaseCard :interactive="true">
+          <div class="module-card__top">
+            <span class="module-number">{{ item.number }}</span
+            ><span class="module-indicator" :class="`tone--${item.tone}`"></span>
+          </div>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.detail }}</p>
+          <div class="module-card__footer">
+            <span>Open workspace</span><span aria-hidden="true">↗</span>
+          </div>
+        </BaseCard>
+      </RouterLink>
     </section>
     <div class="runtime-note" role="status">
       <span class="runtime-note__icon">i</span>
@@ -97,7 +120,7 @@ const modules = [
         <p v-else-if="infoError">{{ infoError }}</p>
         <p v-else>Checking the secure desktop bridge…</p>
       </div>
-      <span class="foundation-pill">{{ infoError ? 'CHECK REQUIRED' : 'PHASE 1' }}</span>
+      <span class="foundation-pill">{{ infoError ? 'CHECK REQUIRED' : 'DESKTOP READY' }}</span>
     </div>
   </div>
 </template>

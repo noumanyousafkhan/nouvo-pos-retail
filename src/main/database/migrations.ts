@@ -216,6 +216,45 @@ export const migrations: Migration[] = [
       ALTER TABLE stores ADD COLUMN receipt_paper_width_mm INTEGER NOT NULL DEFAULT 80 CHECK (receipt_paper_width_mm IN (58,80));
     `,
   },
+  {
+    version: 4,
+    name: 'authentication_and_role_permissions',
+    sql: `
+      ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'cashier' CHECK (role IN ('owner','manager','cashier','inventory_manager'));
+      UPDATE users SET role = 'owner' WHERE id = (SELECT id FROM users ORDER BY created_at LIMIT 1);
+
+      CREATE TABLE role_permissions (
+        role TEXT NOT NULL CHECK (role IN ('owner','manager','cashier','inventory_manager')),
+        permission TEXT NOT NULL,
+        PRIMARY KEY (role, permission)
+      ) STRICT;
+      INSERT INTO role_permissions (role, permission) VALUES
+        ('owner','dashboard.view'),('owner','checkout.use'),('owner','inventory.view'),('owner','inventory.manage'),('owner','stock.manage'),('owner','sales.view'),('owner','reports.view'),('owner','settings.view'),('owner','settings.manage'),('owner','backup.manage'),('owner','users.manage'),('owner','purchasing.view'),
+        ('manager','dashboard.view'),('manager','checkout.use'),('manager','inventory.view'),('manager','inventory.manage'),('manager','stock.manage'),('manager','sales.view'),('manager','reports.view'),('manager','settings.view'),('manager','settings.manage'),('manager','backup.manage'),('manager','purchasing.view'),
+        ('cashier','dashboard.view'),('cashier','checkout.use'),('cashier','inventory.view'),('cashier','sales.view'),('cashier','settings.view'),
+        ('inventory_manager','dashboard.view'),('inventory_manager','inventory.view'),('inventory_manager','inventory.manage'),('inventory_manager','stock.manage'),('inventory_manager','purchasing.view'),('inventory_manager','reports.view'),('inventory_manager','settings.view');
+
+      CREATE TABLE user_sessions (
+        id TEXT PRIMARY KEY,
+        store_id TEXT NOT NULL REFERENCES stores(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        counter_id TEXT NOT NULL REFERENCES counters(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        user_id TEXT NOT NULL REFERENCES users(id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX user_sessions_user_idx ON user_sessions(user_id, expires_at DESC);
+
+      CREATE TABLE auth_login_attempts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL COLLATE NOCASE,
+        attempted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        succeeded INTEGER NOT NULL CHECK (succeeded IN (0,1))
+      ) STRICT;
+      CREATE INDEX auth_attempts_username_time_idx ON auth_login_attempts(username, attempted_at DESC);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

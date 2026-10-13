@@ -6,10 +6,19 @@ import type { CheckoutInput } from '../shared/contracts/checkout';
 import type { SalesListQuery } from '../shared/contracts/sales';
 import type { SaveBusinessSettings } from '../shared/contracts/settings';
 import type { BackupResult, RestoreResult } from '../shared/contracts/backup';
+import type { ReportQuery } from '../shared/contracts/reports';
+import type {
+  AuthCredentials,
+  CreateUserInput,
+  ResetUserPasswordInput,
+  SetupOwnerInput,
+} from '../shared/contracts/auth';
 
 const api: NouvoApi = Object.freeze({
   getAppInfo: () => ipcRenderer.invoke('app:get-info', {}),
   getRuntimeStatus: () => ipcRenderer.invoke('app:get-runtime-status', {}),
+  getSalesReport: (query?: ReportQuery) =>
+    ipcRenderer.invoke('reports:get-sales-report', query ?? {}),
   listProducts: (query?: Partial<ProductListQuery>) =>
     ipcRenderer.invoke('inventory:list-products', query ?? {}),
   saveProduct: (input: ProductInput) => ipcRenderer.invoke('inventory:save-product', input),
@@ -25,6 +34,15 @@ const api: NouvoApi = Object.freeze({
     ipcRenderer.invoke('settings:save-business', input),
   createBackup: (): Promise<BackupResult | null> => ipcRenderer.invoke('backup:create'),
   restoreBackup: (): Promise<RestoreResult | null> => ipcRenderer.invoke('backup:restore'),
+  getAuthState: () => ipcRenderer.invoke('auth:get-state'),
+  setupOwner: (input: SetupOwnerInput) => ipcRenderer.invoke('auth:setup-owner', input),
+  login: (input: AuthCredentials) => ipcRenderer.invoke('auth:login', input),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  listUsers: () => ipcRenderer.invoke('auth:list-users'),
+  createUser: (input: CreateUserInput) => ipcRenderer.invoke('auth:create-user', input),
+  disableUser: (id: string) => ipcRenderer.invoke('auth:disable-user', id),
+  resetUserPassword: (input: ResetUserPasswordInput) =>
+    ipcRenderer.invoke('auth:reset-user-password', input),
 });
 
 contextBridge.exposeInMainWorld('nouvo', api);

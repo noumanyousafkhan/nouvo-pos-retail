@@ -8,6 +8,7 @@ import {
 } from '../database';
 import { createDatabaseBackup } from '../backup/backup-service';
 import { restoreLocalBackup } from '../backup/restore-service';
+import { requirePermission } from '../auth/auth-service';
 
 const createBackupChannel = 'backup:create';
 const restoreBackupChannel = 'backup:restore';
@@ -15,6 +16,7 @@ const restoreBackupChannel = 'backup:restore';
 export function registerBackupIpcHandlers(): void {
   ipcMain.removeHandler(createBackupChannel);
   ipcMain.handle(createBackupChannel, async () => {
+    requirePermission(getLocalDatabaseConnection(), 'backup.manage');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const result = await dialog.showSaveDialog({
       title: 'Create verified NOUVO POS backup',
@@ -36,6 +38,7 @@ export function registerBackupIpcHandlers(): void {
 
   ipcMain.removeHandler(restoreBackupChannel);
   ipcMain.handle(restoreBackupChannel, async () => {
+    requirePermission(getLocalDatabaseConnection(), 'backup.manage');
     const result = await dialog.showOpenDialog({
       title: 'Restore NOUVO POS database backup',
       buttonLabel: 'Validate and restore',

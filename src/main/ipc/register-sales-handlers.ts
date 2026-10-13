@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { SalesListQuerySchema } from '../../shared/contracts/sales';
 import { getLocalCounterId, getLocalDatabaseConnection, getLocalStoreId } from '../database';
 import { SalesService } from '../checkout/sales-service';
+import { requirePermission } from '../auth/auth-service';
 
 const listSalesChannel = 'sales:list';
 const getSaleChannel = 'sales:get';
@@ -12,11 +13,13 @@ function salesService(): SalesService {
 export function registerSalesIpcHandlers(): void {
   ipcMain.removeHandler(listSalesChannel);
   ipcMain.handle(listSalesChannel, (_event, rawQuery: unknown) => {
+    requirePermission(getLocalDatabaseConnection(), 'sales.view');
     const query = SalesListQuerySchema.parse(rawQuery ?? {});
     return salesService().list(query);
   });
   ipcMain.removeHandler(getSaleChannel);
   ipcMain.handle(getSaleChannel, (_event, rawId: unknown) => {
+    requirePermission(getLocalDatabaseConnection(), 'sales.view');
     if (typeof rawId !== 'string') throw new Error('Sale ID must be a string.');
     return salesService().getById(rawId);
   });
