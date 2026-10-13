@@ -74,6 +74,21 @@ describe('report service', () => {
         estimatedCostValueMinor: 1500,
       },
     });
+    expect(report.byCategory).toEqual([
+      {
+        categoryName: 'Uncategorized',
+        saleCount: 1,
+        netSalesMinor: 2000,
+        costMinor: 1000,
+        grossMarginMinor: 1000,
+        costCoveragePercent: 100,
+      },
+    ]);
+    expect(
+      database.connection
+        .prepare('SELECT unit_cost_minor FROM sale_lines WHERE sale_id=?')
+        .get(sale.id),
+    ).toEqual({ unit_cost_minor: 500 });
     expect(report.byPaymentMethod).toEqual([
       { method: 'cash', amountMinor: 2000, paymentCount: 1 },
     ]);

@@ -704,6 +704,13 @@ export const migrations: Migration[] = [
       ALTER TABLE purchase_orders ADD COLUMN supplier_invoice_reconciliation_status TEXT NOT NULL DEFAULT 'not_entered' CHECK (supplier_invoice_reconciliation_status IN ('not_entered','matched','variance_explained'));
     `,
   },
+  {
+    version: 15,
+    name: 'sale_line_cost_snapshots',
+    sql: `
+      ALTER TABLE sale_lines ADD COLUMN unit_cost_minor INTEGER CHECK (unit_cost_minor IS NULL OR unit_cost_minor >= 0);
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

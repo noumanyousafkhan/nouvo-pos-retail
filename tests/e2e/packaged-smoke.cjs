@@ -242,13 +242,13 @@ async function main() {
       .getByRole('status')
       .getByText(/Journal reversed. Reversal entry:/)
       .waitFor();
+    await page.getByRole('link', { name: 'Reports' }).click({ force: true });
+    await page.getByRole('heading', { name: 'Reports & insights' }).waitFor();
     await page.getByRole('link', { name: 'Synchronization' }).click({ force: true });
     await page.getByRole('heading', { name: 'Synchronization' }).waitFor();
     await page.getByRole('heading', { name: 'Central server connection' }).waitFor();
     console.log('PASS packaged sandboxed launch, first-run owner setup and secure preload bridge');
-    console.log(
-      'PASS packaged dashboard, trial balance, income statement, balance sheet and cash movement UI',
-    );
+    console.log('PASS packaged accounting statements and category sales/gross-margin report UI');
     console.log('PASS packaged manual journal posting and reversal dialog');
     console.log('PASS packaged sync configuration and diagnostics UI');
   } finally {

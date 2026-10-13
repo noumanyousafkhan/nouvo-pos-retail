@@ -37,6 +37,16 @@ export const SalesReportSchema = z.object({
       paymentCount: z.number().int().nonnegative(),
     }),
   ),
+  byCategory: z.array(
+    z.object({
+      categoryName: z.string(),
+      saleCount: z.number().int().nonnegative(),
+      netSalesMinor: z.number().int().nonnegative(),
+      costMinor: z.number().int().nonnegative(),
+      grossMarginMinor: z.number().int(),
+      costCoveragePercent: z.number().int().min(0).max(100),
+    }),
+  ),
   byCashier: z.array(
     z.object({
       cashierName: z.string(),

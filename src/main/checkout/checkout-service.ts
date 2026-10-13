@@ -236,7 +236,7 @@ export class CheckoutService {
           changeDueMinor,
         );
       const insertLine = this.database.prepare(
-        'INSERT INTO sale_lines (id, sale_id, product_id, product_name_snapshot, product_code_snapshot, unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+        'INSERT INTO sale_lines (id, sale_id, product_id, product_name_snapshot, product_code_snapshot, unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor, unit_cost_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)',
       );
       for (const line of lines)
         insertLine.run(
@@ -250,6 +250,7 @@ export class CheckoutService {
           line.unitPriceMinor,
           line.taxMinor,
           line.lineTotalMinor,
+          stockDeltas.find((delta) => delta.productId === line.productId)?.unitCostMinor ?? 0,
         );
       const insertPayment = this.database.prepare(
         'INSERT INTO sale_payments (id, sale_id, payment_method, amount_minor, reference, amount_tendered_minor, change_due_minor) VALUES (?, ?, ?, ?, ?, ?, ?)',

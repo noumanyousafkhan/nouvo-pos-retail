@@ -160,6 +160,50 @@ onMounted(loadReport);
         </div>
         <div v-else class="reports-empty">No cashier sales in this date range.</div>
       </BaseCard>
+      <BaseCard class="reports-table-card reports-cashier-card">
+        <header class="reports-card-heading">
+          <div>
+            <h2>Category sales and gross margin</h2>
+            <p>
+              Sales exclude tax and recorded refunds. Cost uses the purchase-cost snapshot saved at
+              checkout.
+            </p>
+          </div>
+          <span>{{ report.byCategory.length }} categories</span>
+        </header>
+        <p
+          v-if="report.byCategory.some((row) => row.costCoveragePercent < 100)"
+          class="reports-empty"
+        >
+          Cost coverage is incomplete for some older sales created before cost snapshots were
+          recorded. Gross margin is partial for those rows.
+        </p>
+        <div v-if="report.byCategory.length" class="reports-table-wrap">
+          <table class="inventory-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Sales</th>
+                <th class="reports-number">Net sales</th>
+                <th class="reports-number">Cost</th>
+                <th class="reports-number">Gross margin</th>
+                <th>Cost coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in report.byCategory" :key="row.categoryName">
+                <td>{{ row.categoryName }}</td>
+                <td>{{ row.saleCount }}</td>
+                <td class="reports-number">{{ money(row.netSalesMinor) }}</td>
+                <td class="reports-number">{{ money(row.costMinor) }}</td>
+                <td class="reports-number">{{ money(row.grossMarginMinor) }}</td>
+                <td>{{ row.costCoveragePercent }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="reports-empty">Category sales will appear after checkout.</div>
+      </BaseCard>
       <section class="reports-two-column">
         <BaseCard class="reports-table-card">
           <header class="reports-card-heading">

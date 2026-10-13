@@ -56,6 +56,36 @@ export class ReportService {
       amount_minor: number;
       payment_count: number;
     }[];
+    const byCategory = this.database
+      .prepare(
+        `SELECT COALESCE(NULLIF(trim(c.name),''),'Uncategorized') AS category_name,
+          COUNT(DISTINCT s.id) AS sale_count,
+          COALESCE(SUM(MAX(0, sl.line_total_minor - sl.tax_minor - sl.discount_minor - COALESCE(r.refund_subtotal_minor,0))),0) AS net_sales_minor,
+          COALESCE(SUM(CASE WHEN sl.unit_cost_minor IS NOT NULL THEN ROUND(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0)) * sl.unit_cost_minor / 1000.0) ELSE 0 END),0) AS cost_minor,
+          COALESCE(SUM(CASE WHEN sl.unit_cost_minor IS NOT NULL THEN MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0)) ELSE 0 END),0) AS costed_quantity_milli,
+          COALESCE(SUM(MAX(0, sl.quantity_milli - COALESCE(r.returned_quantity_milli,0))),0) AS net_quantity_milli
+        FROM sale_lines sl JOIN sales s ON s.id=sl.sale_id
+        LEFT JOIN products p ON p.id=sl.product_id
+        LEFT JOIN categories c ON c.id=p.category_id
+        LEFT JOIN (
+          SELECT rl.original_sale_line_id, SUM(rl.quantity_milli) AS returned_quantity_milli,
+            SUM(rl.refund_subtotal_minor) AS refund_subtotal_minor
+          FROM sale_return_lines rl JOIN sale_returns sr ON sr.id=rl.sale_return_id
+          WHERE sr.status='completed' AND sr.operation='return'
+          GROUP BY rl.original_sale_line_id
+        ) r ON r.original_sale_line_id=sl.id
+        WHERE ${where}
+        GROUP BY COALESCE(NULLIF(trim(c.name),''),'Uncategorized')
+        ORDER BY net_sales_minor DESC, category_name`,
+      )
+      .all(...params) as {
+      category_name: string;
+      sale_count: number;
+      net_sales_minor: number;
+      cost_minor: number;
+      costed_quantity_milli: number;
+      net_quantity_milli: number;
+    }[];
     const byCashier = this.database
       .prepare(
         `SELECT COALESCE(NULLIF(trim(u.display_name),''),'Unassigned cashier') AS cashier_name, COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN users u ON u.id=s.cashier_user_id LEFT JOIN (${refundAggregate}) r ON r.sale_id=s.id WHERE ${where} GROUP BY s.cashier_user_id, u.display_name HAVING SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))) > 0 OR COUNT(*) > 0 ORDER BY total_minor DESC, cashier_name LIMIT 50`,
@@ -93,6 +123,17 @@ export class ReportService {
         method: row.method,
         amountMinor: row.amount_minor,
         paymentCount: row.payment_count,
+      })),
+      byCategory: byCategory.map((row) => ({
+        categoryName: row.category_name,
+        saleCount: row.sale_count,
+        netSalesMinor: row.net_sales_minor,
+        costMinor: row.cost_minor,
+        grossMarginMinor: row.net_sales_minor - row.cost_minor,
+        costCoveragePercent:
+          row.net_quantity_milli > 0
+            ? Math.round((row.costed_quantity_milli / row.net_quantity_milli) * 100)
+            : 100,
       })),
       byCashier: byCashier.map((row) => ({
         cashierName: row.cashier_name,
