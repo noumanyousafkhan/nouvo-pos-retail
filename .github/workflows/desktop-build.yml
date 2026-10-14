@@ -53,8 +53,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg
       - name: Install locked dependencies
         run: npm ci
+      - name: Clear stale package output
+        run: rm -rf release
       - name: Build and package
         run: npm run build:linux
+      - name: Verify only Retail Linux packages were produced
+        shell: bash
+        run: |
+          mapfile -t appimages < <(find release -maxdepth 1 -type f -name '*.AppImage')
+          mapfile -t debs < <(find release -maxdepth 1 -type f -name '*.deb')
+          test "${#appimages[@]}" -eq 1 || { echo "Expected exactly one Retail AppImage"; exit 1; }
+          test "${#debs[@]}" -eq 1 || { echo "Expected exactly one Retail Debian package"; exit 1; }
+          for file in "${appimages[0]}" "${debs[0]}"; do
+            name="$(basename "$file" | tr '[:upper:]' '[:lower:]')"
+            [[ "$name" == *cash*carry* || "$name" == *cash-carry* ]] || { echo "Unexpected package name: $file"; exit 1; }
+            [[ "$name" != *vanilla* ]] || { echo "Vanilla package must never be shipped from Retail workflow"; exit 1; }
+          done
       - name: Generate SHA-256 checksums
         shell: bash
         run: cd release && sha256sum *.AppImage *.deb > SHA256SUMS-Linux.txt
@@ -99,8 +113,20 @@ jobs:
             throw "Missing build/vc_redist.x64.exe after dependency installation."
           }
           Write-Output "VC++ runtime prerequisite is present."
+      - name: Clear stale package output
+        shell: pwsh
+        run: Remove-Item release -Recurse -Force -ErrorAction SilentlyContinue
       - name: Build and package
         run: npm run build:win:ci
+      - name: Verify only the Retail Windows installer was produced
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem release -File -Filter '*.exe')
+          if ($installers.Count -ne 1) { throw "Expected exactly one Windows installer; found $($installers.Count)." }
+          $name = $installers[0].Name
+          if ($name -notmatch '^NOUVO POS Cash and Carry Setup .*\.exe$') { throw "Unexpected installer name: $name" }
+          if ($name -match 'Vanilla') { throw "Vanilla installer must never be shipped from Retail workflow." }
+          Write-Output "Verified Retail-only installer: $name"
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
