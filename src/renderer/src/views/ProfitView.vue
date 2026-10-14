@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint vue/html-indent: off, vue/multiline-html-element-content-newline: off */
 import { computed, onMounted, reactive, ref } from 'vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
@@ -128,19 +129,19 @@ onMounted(loadReport);
           </button>
         </div>
         <label class="inventory-field"
-        >From date<input
-          v-model="filters.fromDate"
-          type="date"
-          :max="filters.toDate || today()"
-          :required="activePeriod !== 'all'"
+          >From date<input
+            v-model="filters.fromDate"
+            type="date"
+            :max="filters.toDate || today()"
+            :required="activePeriod !== 'all'"
         /></label>
         <label class="inventory-field"
-        >To date<input
-          v-model="filters.toDate"
-          type="date"
-          :min="filters.fromDate || undefined"
-          :max="today()"
-          :required="activePeriod !== 'all'"
+          >To date<input
+            v-model="filters.toDate"
+            type="date"
+            :min="filters.fromDate || undefined"
+            :max="today()"
+            :required="activePeriod !== 'all'"
         /></label>
         <button class="reports-apply-button" type="submit" :disabled="loading">
           {{ loading ? 'Loading…' : 'Apply dates' }}
