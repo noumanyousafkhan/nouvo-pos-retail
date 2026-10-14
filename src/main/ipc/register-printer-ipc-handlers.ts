@@ -155,10 +155,31 @@ async function printWithWindowsDriver(
         message: 'No Windows printer is installed. Install the printer driver and try again.',
       };
     }
+
+    // Never silently send a receipt to the Windows default printer: that may be
+    // an A4 laser printer. Select the installed thermal/receipt printer by its
+    // system name, display name, or driver description.
+    const thermalPrinter = printers.find((printer) =>
+      /black\s*copper|rongta|bc[-\s]?88|thermal|receipt|pos[-\s]?(58|80)|xp[-\s]?80|80mm|58mm/i.test(
+        [printer.name, printer.displayName, printer.description].filter(Boolean).join(' '),
+      ),
+    );
+    if (!thermalPrinter) {
+      const installedNames = printers
+        .map((printer) => printer.displayName || printer.name)
+        .filter(Boolean)
+        .join(', ');
+      return {
+        success: false,
+        message: `NOUVO POS could not identify the thermal receipt printer. Installed printers: ${installedNames}. Make sure the Black Copper/RONGTA printer driver is installed, then retry.`,
+      };
+    }
+
     return await new Promise((resolve) => {
       printWindow.webContents.print(
         {
           silent: true,
+          deviceName: thermalPrinter.name,
           printBackground: false,
           margins: { marginType: 'none' },
           pageSize: { width: paperWidthMm * 1000, height: heightMicrons },
@@ -166,10 +187,13 @@ async function printWithWindowsDriver(
         (success, failureReason) => {
           resolve(
             success
-              ? { success: true, message: 'Receipt sent to the Windows default printer.' }
+              ? {
+                  success: true,
+                  message: `Receipt sent to ${thermalPrinter.displayName || thermalPrinter.name}.`,
+                }
               : {
                   success: false,
-                  message: `Windows printer failed: ${failureReason || 'Unknown print error'}. Check that the correct thermal printer is selected as the Windows default printer.`,
+                  message: `Printing to ${thermalPrinter.displayName || thermalPrinter.name} failed: ${failureReason || 'Unknown print error'}. Check the printer driver and paper-size settings.`,
                 },
           );
         },
