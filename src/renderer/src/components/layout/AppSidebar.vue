@@ -13,6 +13,7 @@ const navigation = [
   { label: 'Inventory', to: '/inventory', icon: '▤', permission: 'inventory.view' },
   { label: 'Purchasing', to: '/purchasing', icon: '⇄', permission: 'purchasing.view' },
   { label: 'Reports', to: '/reports', icon: '▥', permission: 'reports.view' },
+  { label: 'Profit & Loss', to: '/profit', icon: '↗', permission: 'reports.view' },
   { label: 'Accounting', to: '/accounting', icon: '∑', permission: 'accounting.view' },
   { label: 'Synchronization', to: '/sync', icon: '↻', permission: 'sync.view' },
   { label: 'Branding', to: '/branding', icon: '✦', permission: 'settings.manage' },

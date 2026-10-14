@@ -9,6 +9,7 @@ import LoginView from '@/views/LoginView.vue';
 import SetupView from '@/views/SetupView.vue';
 import ForbiddenView from '@/views/ForbiddenView.vue';
 import ReportsView from '@/views/ReportsView.vue';
+import ProfitView from '@/views/ProfitView.vue';
 import PurchasingView from '@/views/PurchasingView.vue';
 import CashSessionsView from '@/views/CashSessionsView.vue';
 import AccountingView from '@/views/AccountingView.vue';
@@ -130,6 +131,17 @@ export const router = createRouter({
       meta: {
         title: 'Reports',
         description: 'Sales, stock and financial reporting.',
+        module: 'Reports',
+        permission: 'reports.view',
+      },
+    },
+    {
+      path: '/profit',
+      name: 'profit',
+      component: ProfitView,
+      meta: {
+        title: 'Profit & Loss',
+        description: 'Gross profit analysis with date filters and category margins.',
         module: 'Reports',
         permission: 'reports.view',
       },
