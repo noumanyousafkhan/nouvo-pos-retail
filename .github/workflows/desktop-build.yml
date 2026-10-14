@@ -92,6 +92,13 @@ jobs:
           }
       - name: Install locked dependencies
         run: npm ci
+      - name: Verify installer prerequisite is present
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build/vc_redist.x64.exe")) {
+            throw "Missing build/vc_redist.x64.exe after dependency installation."
+          }
+          Write-Output "VC++ runtime prerequisite is present."
       - name: Build and package
         run: npm run build:win:ci
       - name: Upload Windows installer

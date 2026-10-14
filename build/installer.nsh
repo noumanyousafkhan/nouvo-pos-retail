@@ -6,7 +6,7 @@
   StrCmp $1 1 vcredist_already_installed
 
   SetOutPath "$PLUGINSDIR"
-  File /oname=vc_redist.x64.exe "${BUILD_RESOURCES_DIR}/vc_redist.x64.exe"
+  File /oname=vc_redist.x64.exe "${PROJECT_DIR}\build\vc_redist.x64.exe"
   DetailPrint "Installing the required Microsoft Visual C++ x64 runtime..."
   ExecWait '"$PLUGINSDIR\vc_redist.x64.exe" /install /quiet /norestart' $0
 
