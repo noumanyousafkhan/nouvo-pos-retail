@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import BaseButton from '@/components/base/BaseButton.vue';
 import type { SaleReturnResult } from '@shared/contracts/returns';
 const props = defineProps<{ result: SaleReturnResult }>();
@@ -9,8 +10,63 @@ const money = (minor: number) =>
     currency: props.result.currencyCode,
     minimumFractionDigits: 2,
   }).format(minor / 100);
-function printReceipt() {
-  window.print();
+const isPrinting = ref(false);
+const printMessage = ref('');
+const printerMoney = (minor: number) => `${props.result.currencyCode} ${(minor / 100).toFixed(2)}`;
+const posFooter = 'POS by: Nouman Yousaf - 03114521220';
+function displayFooter(value: string): string {
+  return [
+    ...new Set(
+      value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && line !== posFooter),
+    ),
+    posFooter,
+  ].join('\n');
+}
+async function printReceipt() {
+  if (isPrinting.value) return;
+  isPrinting.value = true;
+  printMessage.value = '';
+  const result = props.result;
+  const lines = [
+    `[[CENTER]]${result.businessName}`,
+    ...(result.businessAddress ? [`[[CENTER]]${result.businessAddress}`] : []),
+    ...(result.businessPhone ? [`[[CENTER]]${result.businessPhone}`] : []),
+    ...(result.businessRegistrationNumber ? [`Reg: ${result.businessRegistrationNumber}`] : []),
+    '[[RULE]]',
+    `${result.operation === 'void' ? 'SALE VOIDED' : 'RETURN COMPLETED'}: ${result.returnNumber}`,
+    `Original receipt: ${result.originalReceiptNumber}`,
+    `Date: ${new Date(result.createdAt).toLocaleString('en-GB')}`,
+    '[[RULE]]',
+    ...result.lines.flatMap((line) => [
+      `[[PAIR]]${line.productName}\t${printerMoney(line.refundTotalMinor)}`,
+      `  ${(line.quantityMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${line.unit}`,
+    ]),
+    '[[RULE]]',
+    `[[PAIR]]${result.operation === 'void' ? 'Refund total' : 'Return refund'}\t${printerMoney(result.totalMinor)}`,
+    ...result.payments.map(
+      (payment) =>
+        `[[PAIR]]${payment.paymentMethod.replace('_', ' ')} refund\t${printerMoney(payment.amountMinor)}`,
+    ),
+    `Reason: ${result.reason}`,
+    `[[CENTER]]${displayFooter(result.receiptFooter)}`,
+    '',
+  ];
+  try {
+    const response = await window.nouvo.printThermalReceipt({
+      lines,
+      paperWidthMm: result.receiptPaperWidthMm,
+    });
+    printMessage.value = response.success
+      ? response.message
+      : `Printing failed: ${response.message}`;
+  } catch (error) {
+    printMessage.value = `Printing failed: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    isPrinting.value = false;
+  }
 }
 </script>
 <template>
@@ -64,9 +120,15 @@ function printReceipt() {
           <span>Reason</span><strong>{{ result.reason }}</strong>
         </div>
       </div>
-      <p v-if="result.receiptFooter" class="receipt-footer-text">{{ result.receiptFooter }}</p>
+      <p class="receipt-footer-text">{{ displayFooter(result.receiptFooter) }}</p>
+      <p v-if="printMessage" class="checkout-receipt-note" role="status">{{ printMessage }}</p>
       <footer class="inventory-modal-footer receipt-preview-actions">
-        <BaseButton variant="secondary" @click="printReceipt">Print return receipt</BaseButton
+        <BaseButton
+          variant="secondary"
+          :loading="isPrinting"
+          :disabled="isPrinting"
+          @click="printReceipt"
+          >{{ isPrinting ? 'Printing…' : 'Print return receipt' }}</BaseButton
         ><BaseButton @click="emit('close')">Close</BaseButton>
       </footer>
     </section>

@@ -14,6 +14,7 @@ import { registerPurchasingIpcHandlers } from './ipc/register-purchasing-handler
 import { registerCashSessionIpcHandlers } from './ipc/register-cash-session-handlers';
 import { registerAccountingIpcHandlers } from './ipc/register-accounting-handlers';
 import { registerSyncIpcHandlers } from './ipc/register-sync-handlers';
+import { registerPrinterIpcHandlers } from './ipc/register-printer-ipc-handlers';
 import { SyncConfigStore } from './sync/sync-config-store';
 import { SyncService } from './sync/sync-service';
 import { SyncWorker } from './sync/sync-worker';
@@ -82,6 +83,7 @@ app
       // Keep the shell available so the UI can report the database failure and recovery guidance.
     }
     registerAppIpcHandlers();
+    registerPrinterIpcHandlers();
     if (getLocalDatabaseStatus() === 'ready') {
       const syncService = new SyncService(
         getLocalDatabaseConnection(),

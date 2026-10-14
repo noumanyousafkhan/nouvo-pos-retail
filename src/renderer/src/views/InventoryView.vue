@@ -330,12 +330,13 @@ onMounted(async () => {
         <BaseButton v-if="!search" @click="openNewProduct">Add your first product</BaseButton>
       </div>
       <div v-else class="inventory-table-wrap">
-        <table class="inventory-table">
+        <table class="inventory-table inventory-products-table">
           <thead>
             <tr>
               <th>PRODUCT</th>
               <th>SKU / BARCODE</th>
               <th>CATEGORY</th>
+              <th>STOCK ON HAND</th>
               <th>PURCHASE COST</th>
               <th>SELLING PRICE</th>
               <th>STATUS</th>

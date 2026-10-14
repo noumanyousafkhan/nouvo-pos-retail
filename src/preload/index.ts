@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { NouvoApi } from '../shared/contracts/app';
+import type { NouvoApi, ThermalReceiptInput } from '../shared/contracts/app';
 import type { ProductInput, ProductListQuery } from '../shared/contracts/products';
 import type { StockMovementInput } from '../shared/contracts/stock';
 import type { CheckoutInput } from '../shared/contracts/checkout';
@@ -31,6 +31,8 @@ import type {
 const api: NouvoApi = Object.freeze({
   getAppInfo: () => ipcRenderer.invoke('app:get-info', {}),
   getRuntimeStatus: () => ipcRenderer.invoke('app:get-runtime-status', {}),
+  printThermalReceipt: (input: ThermalReceiptInput) =>
+    ipcRenderer.invoke('printer:print-thermal-receipt', input),
   getSalesReport: (query?: ReportQuery) =>
     ipcRenderer.invoke('reports:get-sales-report', query ?? {}),
   listSuppliers: () => ipcRenderer.invoke('purchasing:list-suppliers'),
@@ -110,5 +112,4 @@ const api: NouvoApi = Object.freeze({
   resetUserPassword: (input: ResetUserPasswordInput) =>
     ipcRenderer.invoke('auth:reset-user-password', input),
 });
-
 contextBridge.exposeInMainWorld('nouvo', api);

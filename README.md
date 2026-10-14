@@ -63,6 +63,25 @@ npm run test:e2e:responsive:linux
 
 These tests launch the packaged Linux application and use isolated test data. They are not a replacement for manually testing receipt printers, barcode scanners, Windows installation/upgrade, or the actual shop hardware.
 
+## CI/CD and versioned releases
+
+GitHub Actions is configured in `.github/workflows/desktop-build.yml`.
+
+- Pull requests and pushes run lint, formatting, type-checking, unit tests and the production build.
+- Pushes to `main` also build Windows x64 NSIS installers and Linux AppImage/`.deb` packages; download them from the workflow run's **Artifacts** section.
+- Pushing a version tag such as `v0.2.6` builds both platforms and publishes the installers as a GitHub Release. The tag must match `package.json`'s version.
+- CI artifacts are temporary workflow downloads (14-day retention); tagged GitHub Releases are the versioned distribution point.
+- Builds run on native Windows and Linux GitHub-hosted runners to avoid cross-platform native-module packaging problems.
+
+To publish a release after committing the version in `package.json` and `package-lock.json`:
+
+```bash
+git tag v0.2.6
+git push origin v0.2.6
+```
+
+Only create a tag once that version is ready to distribute. Test the downloaded installers on clean target machines before production use.
+
 ## Build installers
 
 ### Windows (NSIS x64)
@@ -80,11 +99,10 @@ Output: `release/NOUVO POS Cash and Carry Setup <version>.exe`
 ### Linux
 
 ```bash
-npm run build
-npx electron-builder --linux AppImage deb
+npm run build:linux
 ```
 
-Output is written to the ignored `release/` directory. Always install and launch the resulting package on a clean target machine before distribution.
+Output is written to the ignored `release/` directory. On a native Windows build runner, use `npm run build:win:ci`; `build:win` is the Linux cross-build path. Always install and launch the resulting package on a clean target machine before distribution.
 
 ## Optional central sync server
 

@@ -425,6 +425,7 @@ a:focus-visible {
   transform: translateY(-1px);
 }
 .today-sales-copy,
+.today-profit-copy,
 .today-sales-meta {
   display: flex;
   flex-direction: column;
@@ -437,7 +438,8 @@ a:focus-visible {
   font-weight: 850;
   letter-spacing: 1.2px;
 }
-.today-sales-copy strong {
+.today-sales-copy strong,
+.today-profit-copy strong {
   color: #205e49;
   font-size: clamp(25px, 2.5vw, 34px);
   font-weight: 850;
@@ -448,6 +450,13 @@ a:focus-visible {
 .today-sales-meta > span:nth-child(2) {
   color: #7d928a;
   font-size: 12px;
+}
+.today-profit-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
 }
 .today-sales-meta {
   align-items: flex-end;
@@ -467,12 +476,22 @@ a:focus-visible {
 @media (max-width: 560px) {
   .today-sales-panel {
     align-items: flex-start;
+    flex-wrap: wrap;
     padding: 18px;
   }
-  .today-sales-meta {
-    max-width: 44%;
+  .today-sales-copy,
+  .today-profit-copy {
+    width: calc(50% - 12px);
+    overflow-wrap: anywhere;
   }
-  .today-sales-copy strong {
+  .today-sales-meta {
+    width: 100%;
+    max-width: none;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .today-sales-copy strong,
+  .today-profit-copy strong {
     overflow-wrap: anywhere;
   }
 }
@@ -932,6 +951,9 @@ a:focus-visible {
   border-collapse: collapse;
   text-align: left;
   white-space: nowrap;
+}
+.inventory-products-table {
+  min-width: 1120px;
 }
 .inventory-table th {
   padding: 14px 16px;
@@ -2123,11 +2145,14 @@ a:focus-visible {
   font-size: 13.559999999999999px;
 }
 .receipt-footer-text {
+  white-space: pre-line;
   margin: 0 0 12px;
   color: #626d83;
   text-align: center;
   font-size: 11.5px;
-  white-space: pre-wrap;
+}
+.receipt-footer-text span {
+  display: block;
 }
 .settings-icon--backup {
   color: #2769a7;

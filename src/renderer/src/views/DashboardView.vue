@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
@@ -9,9 +9,25 @@ import type { BusinessSettings } from '@shared/contracts/settings';
 
 const appInfo = ref<AppInfo | null>(null);
 const infoError = ref('');
+const reportError = ref('');
 const todayReport = ref<SalesReport | null>(null);
 const currencyCode = ref('PKR');
 const salesLoading = ref(true);
+const todayGrossProfitMinor = computed(
+  () =>
+    todayReport.value?.byCategory.reduce(
+      (total, category) => total + category.grossMarginMinor,
+      0,
+    ) ?? 0,
+);
+const profitCostCoverageComplete = computed(() =>
+  (todayReport.value?.byCategory ?? []).every((category) => category.costCoveragePercent === 100),
+);
+const todayProfitCaption = computed(() =>
+  profitCostCoverageComplete.value
+    ? 'Based on recorded product costs'
+    : 'Some products are missing cost data',
+);
 const todayDate = () => {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
@@ -31,16 +47,23 @@ onMounted(async () => {
     infoError.value = 'Desktop bridge unavailable. Restart the app and check its logs.';
   }
   try {
-    const [report, settings] = await Promise.all([
-      window.nouvo.getSalesReport({ fromDate: todayDate(), toDate: todayDate() }),
-      window.nouvo.getBusinessSettings(),
-    ]);
-    todayReport.value = report;
-    currencyCode.value = (settings as BusinessSettings).currencyCode;
-  } catch {
-    // Keep the dashboard usable even if the report cannot be loaded.
+    // Sales must not disappear just because an unrelated settings request fails.
+    todayReport.value = await window.nouvo.getSalesReport({
+      fromDate: todayDate(),
+      toDate: todayDate(),
+    });
+  } catch (error) {
+    // Never disguise a failed report request as real zero sales/profit.
+    reportError.value =
+      error instanceof Error ? error.message : 'Sales report could not be loaded.';
   } finally {
     salesLoading.value = false;
+  }
+  try {
+    const settings = (await window.nouvo.getBusinessSettings()) as BusinessSettings;
+    currencyCode.value = settings.currencyCode;
+  } catch {
+    // Keep the default PKR display if only business settings fail to load.
   }
 });
 
@@ -113,12 +136,29 @@ const modules = [
     <RouterLink class="today-sales-panel" to="/reports" aria-label="Open reports for today's sales">
       <div class="today-sales-copy">
         <span class="today-sales-label">TODAY'S SALES</span>
-        <strong>{{ salesLoading ? 'Loading…' : money(todayReport?.totalMinor ?? 0) }}</strong>
-        <span class="today-sales-caption">Net sales after recorded refunds</span>
+        <strong>{{
+          salesLoading
+            ? 'Loading…'
+            : reportError
+              ? 'Unavailable'
+              : money(todayReport?.totalMinor ?? 0)
+        }}</strong>
+        <span class="today-sales-caption">{{
+          reportError || 'Net sales after recorded refunds'
+        }}</span>
+      </div>
+      <div class="today-profit-copy">
+        <span class="today-sales-label">ESTIMATED GROSS PROFIT</span>
+        <strong>{{
+          salesLoading ? 'Loading…' : reportError ? 'Unavailable' : money(todayGrossProfitMinor)
+        }}</strong>
+        <span class="today-sales-caption">{{
+          reportError || (salesLoading ? 'Calculating from item costs' : todayProfitCaption)
+        }}</span>
       </div>
       <div class="today-sales-meta">
         <span class="today-sales-count">{{
-          salesLoading ? '—' : (todayReport?.saleCount ?? 0)
+          salesLoading ? '—' : reportError ? '—' : (todayReport?.saleCount ?? 0)
         }}</span>
         <span>completed sales today</span>
         <span class="today-sales-link">View sales report ↗</span>

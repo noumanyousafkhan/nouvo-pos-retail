@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import BaseButton from '@/components/base/BaseButton.vue';
 import type { SaleResult } from '@shared/contracts/checkout';
 
@@ -12,8 +13,69 @@ const formatMoney = (minor: number) =>
     currency: props.sale.currencyCode,
     minimumFractionDigits: 2,
   }).format(minor / 100);
-function printReceipt() {
-  window.print();
+const isPrinting = ref(false);
+const printMessage = ref('');
+const printerMoney = (minor: number) => `${props.sale.currencyCode} ${(minor / 100).toFixed(2)}`;
+const posFooter = 'POS by: Nouman Yousaf - 03114521220';
+function displayFooter(value: string): string {
+  return [
+    ...new Set(
+      value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && line !== posFooter),
+    ),
+    posFooter,
+  ].join('\n');
+}
+async function printReceipt() {
+  if (isPrinting.value) return;
+  isPrinting.value = true;
+  printMessage.value = '';
+  const sale = props.sale;
+  const lines = [
+    `[[CENTER]]${sale.businessName}`,
+    ...(sale.businessAddress ? [`[[CENTER]]${sale.businessAddress}`] : []),
+    ...(sale.businessPhone ? [`[[CENTER]]${sale.businessPhone}`] : []),
+    ...(sale.businessRegistrationNumber ? [`Reg: ${sale.businessRegistrationNumber}`] : []),
+    '[[RULE]]',
+    `Receipt: ${sale.receiptNumber}`,
+    `Date: ${new Date(sale.completedAt).toLocaleString('en-GB')}`,
+    '[[RULE]]',
+    ...sale.lines.flatMap((line) => [
+      `[[PAIR]]${line.productName}\t${printerMoney(line.lineTotalMinor)}`,
+      `  ${(line.quantityMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${line.unit} x ${printerMoney(line.unitPriceMinor)}`,
+    ]),
+    '[[RULE]]',
+    `[[PAIR]]Subtotal\t${printerMoney(sale.subtotalMinor)}`,
+    ...(sale.discountMinor > 0 ? [`[[PAIR]]Discount\t-${printerMoney(sale.discountMinor)}`] : []),
+    `[[PAIR]]Tax\t${printerMoney(sale.taxMinor)}`,
+    `[[PAIR]]TOTAL\t${printerMoney(sale.totalMinor)}`,
+    ...sale.payments.map(
+      (payment) =>
+        `[[PAIR]]${payment.paymentMethod.replace('_', ' ')} paid\t${printerMoney(payment.amountMinor)}`,
+    ),
+    `[[PAIR]]Change due\t${printerMoney(sale.changeDueMinor)}`,
+    `[[CENTER]]${displayFooter(sale.receiptFooter)}`,
+    '',
+    'Thank you!',
+  ];
+  try {
+    const result = await window.nouvo.printThermalReceipt({
+      lines,
+      paperWidthMm: sale.receiptPaperWidthMm,
+    });
+    if (!result.success) {
+      printMessage.value = `Printing failed: ${result.message}`;
+    } else {
+      printMessage.value = result.message;
+      emit('close');
+    }
+  } catch (error) {
+    printMessage.value = `Printing failed: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    isPrinting.value = false;
+  }
 }
 </script>
 
@@ -80,13 +142,19 @@ function printReceipt() {
           <span>Change due</span><strong>{{ formatMoney(sale.changeDueMinor) }}</strong>
         </div>
       </div>
-      <p v-if="sale.receiptFooter" class="receipt-footer-text">{{ sale.receiptFooter }}</p>
+      <p class="receipt-footer-text">{{ displayFooter(sale.receiptFooter) }}</p>
       <p class="checkout-receipt-note">
-        This receipt is saved locally. Use Print receipt to open the system print dialog and select
-        an available printer.
+        Receipt printing sends a single thermal-print job directly to the configured printer.
       </p>
+      <p v-if="printMessage" class="checkout-receipt-note" role="status">{{ printMessage }}</p>
       <footer class="inventory-modal-footer receipt-preview-actions">
-        <BaseButton variant="secondary" @click="printReceipt">Print receipt</BaseButton>
+        <BaseButton
+          variant="secondary"
+          :loading="isPrinting"
+          :disabled="isPrinting"
+          @click="printReceipt"
+          >{{ isPrinting ? 'Printing…' : 'Print receipt' }}</BaseButton
+        >
         <BaseButton @click="emit('close')">{{ doneLabel }}</BaseButton>
       </footer>
     </section>

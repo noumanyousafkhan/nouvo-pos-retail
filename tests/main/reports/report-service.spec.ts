@@ -47,6 +47,11 @@ function setup() {
     reports: new ReportService(database.connection, storeId, counterId),
   };
 }
+const localDate = (value: string) => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
 afterEach(() => {
   for (const database of opened.splice(0)) database.close();
 });
@@ -60,8 +65,8 @@ describe('report service', () => {
       paymentLines: [{ paymentMethod: 'cash', amountMinor: 2000, amountTenderedMinor: 2500 }],
     });
     const report = reports.sales({
-      fromDate: sale.completedAt.slice(0, 10),
-      toDate: sale.completedAt.slice(0, 10),
+      fromDate: localDate(sale.completedAt),
+      toDate: localDate(sale.completedAt),
     });
     expect(report).toMatchObject({
       saleCount: 1,
@@ -120,8 +125,8 @@ describe('report service', () => {
       refundPaymentMethod: 'cash',
     });
     const report = reports.sales({
-      fromDate: sale.completedAt.slice(0, 10),
-      toDate: sale.completedAt.slice(0, 10),
+      fromDate: localDate(sale.completedAt),
+      toDate: localDate(sale.completedAt),
     });
     expect(report).toMatchObject({ saleCount: 1, subtotalMinor: 1000, totalMinor: 1000 });
     expect(report.byPaymentMethod).toEqual([

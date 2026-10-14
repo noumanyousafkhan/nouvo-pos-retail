@@ -22,11 +22,11 @@ export class ReportService {
     ];
     const params: (string | number)[] = [this.storeId];
     if (query.fromDate) {
-      clauses.push('date(s.completed_at) >= ?');
+      clauses.push("date(s.completed_at, 'localtime') >= ?");
       params.push(query.fromDate);
     }
     if (query.toDate) {
-      clauses.push('date(s.completed_at) <= ?');
+      clauses.push("date(s.completed_at, 'localtime') <= ?");
       params.push(query.toDate);
     }
     const where = clauses.join(' AND ');
@@ -44,7 +44,7 @@ export class ReportService {
     };
     const daily = this.database
       .prepare(
-        `SELECT date(s.completed_at) AS date, COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN (${refundAggregate}) r ON r.sale_id = s.id WHERE ${where} GROUP BY date(s.completed_at) ORDER BY date DESC LIMIT 90`,
+        `SELECT date(s.completed_at, 'localtime') AS date, COUNT(*) AS sale_count, COALESCE(SUM(MAX(0, s.total_minor - COALESCE(r.refund_total_minor,0))),0) AS total_minor FROM sales s LEFT JOIN (${refundAggregate}) r ON r.sale_id = s.id WHERE ${where} GROUP BY date(s.completed_at, 'localtime') ORDER BY date DESC LIMIT 90`,
       )
       .all(...params) as { date: string; sale_count: number; total_minor: number }[];
     const byPaymentMethod = this.database
