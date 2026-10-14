@@ -3,12 +3,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { ThermalReceiptSchema } from '../../shared/contracts/app';
 
 const execFileAsync = promisify(execFile);
 const channel = 'printer:print-thermal-receipt';
-const queue = '80Series2';
+const linuxQueue = '80Series2';
 
 function toAscii(value: string): string {
   return value
@@ -19,6 +19,7 @@ function toAscii(value: string): string {
     .replace(/[−–—]/g, '-')
     .replace(/[^\x20-\x7e]/g, '?');
 }
+
 function wrap(value: string, width: number): string[] {
   // Preserve intentional newlines entered in the receipt footer textarea.
   return value.split(/\r?\n/).flatMap((paragraph) => {
@@ -42,6 +43,7 @@ function wrap(value: string, width: number): string[] {
     return lines;
   });
 }
+
 function buildEscPos(lines: string[], paperWidthMm: 58 | 80): Buffer {
   const width = paperWidthMm === 58 ? 32 : 48;
   const out: Buffer[] = [Buffer.from([27, 64, 27, 97, 0])];
@@ -72,17 +74,138 @@ function buildEscPos(lines: string[], paperWidthMm: 58 | 80): Buffer {
   out.push(Buffer.from([29, 86, 65, 0]));
   return Buffer.concat(out);
 }
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function receiptHtml(
+  lines: string[],
+  paperWidthMm: 58 | 80,
+): { html: string; heightMicrons: number } {
+  const columns = paperWidthMm === 58 ? 32 : 48;
+  const blocks = lines.map((raw) => {
+    if (raw === '[[RULE]]') return '<div class="rule"></div>';
+    if (raw.startsWith('[[CENTER]]')) {
+      const value = raw.slice(10);
+      return `<div class="center">${escapeHtml(value)}</div>`;
+    }
+    if (raw.startsWith('[[PAIR]]')) {
+      const pair = raw.slice(8);
+      const tab = pair.indexOf(String.fromCharCode(9));
+      const label = tab < 0 ? pair : pair.slice(0, tab);
+      const amount = tab < 0 ? '' : pair.slice(tab + 1);
+      return `<div class="pair"><span class="label">${escapeHtml(label)}</span><span class="amount">${escapeHtml(amount)}</span></div>`;
+    }
+    return `<div class="line">${escapeHtml(raw)}</div>`;
+  });
+  const estimatedRows = lines.reduce((total, raw) => {
+    if (raw === '[[RULE]]') return total + 1;
+    const value = raw.startsWith('[[CENTER]]')
+      ? raw.slice(10)
+      : raw.startsWith('[[PAIR]]')
+        ? raw.slice(8).replace(String.fromCharCode(9), ' ')
+        : raw;
+    return (
+      total + Math.max(1, ...value.split(/\r?\n/).map((part) => Math.ceil(part.length / columns)))
+    );
+  }, 0);
+  const heightMm = Math.max(60, Math.min(1200, estimatedRows * 5 + 15));
+  return {
+    heightMicrons: Math.round(heightMm * 1000),
+    html: `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@page { size: ${paperWidthMm}mm ${heightMm}mm; margin: 0; }
+* { box-sizing: border-box; }
+html, body { width: ${paperWidthMm}mm; margin: 0; padding: 0; background: #fff; color: #000; }
+body { padding: 2mm; font: 9pt/1.25 Consolas, "Courier New", monospace; overflow-wrap: anywhere; }
+.center { text-align: center; white-space: pre-wrap; margin: 0 0 1mm; }
+.line { white-space: pre-wrap; min-height: 3.8mm; }
+.rule { border-top: 1px dashed #000; height: 2mm; margin-top: 1mm; }
+.pair { display: flex; justify-content: space-between; gap: 1mm; align-items: flex-start; min-height: 4mm; }
+.label { flex: 1 1 auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.amount { flex: 0 0 auto; white-space: nowrap; }
+</style></head><body>${blocks.join('')}</body></html>`,
+  };
+}
+
+async function printWithWindowsDriver(
+  lines: string[],
+  paperWidthMm: 58 | 80,
+): Promise<{ success: boolean; message: string }> {
+  const printWindow = new BrowserWindow({
+    show: false,
+    width: paperWidthMm === 58 ? 230 : 310,
+    height: 900,
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  try {
+    const { html, heightMicrons } = receiptHtml(lines, paperWidthMm);
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const printers = await printWindow.webContents.getPrintersAsync();
+    if (printers.length === 0) {
+      return {
+        success: false,
+        message: 'No Windows printer is installed. Install the printer driver and try again.',
+      };
+    }
+    return await new Promise((resolve) => {
+      printWindow.webContents.print(
+        {
+          silent: true,
+          printBackground: false,
+          margins: { marginType: 'none' },
+          pageSize: { width: paperWidthMm * 1000, height: heightMicrons },
+        },
+        (success, failureReason) => {
+          resolve(
+            success
+              ? { success: true, message: 'Receipt sent to the Windows default printer.' }
+              : {
+                  success: false,
+                  message: `Windows printer failed: ${failureReason || 'Unknown print error'}. Check that the correct thermal printer is selected as the Windows default printer.`,
+                },
+          );
+        },
+      );
+    });
+  } catch (error) {
+    return {
+      success: false,
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    };
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.destroy();
+  }
+}
+
 export function registerPrinterIpcHandlers(): void {
   ipcMain.removeHandler(channel);
   ipcMain.handle(channel, async (_event, raw: unknown) => {
     const input = ThermalReceiptSchema.parse(raw);
-    if (process.platform !== 'linux')
-      return { success: false, message: 'Direct printer output is available on Linux only.' };
+
+    if (process.platform === 'win32') {
+      return printWithWindowsDriver(input.lines, input.paperWidthMm);
+    }
+
+    if (process.platform !== 'linux') {
+      return {
+        success: false,
+        message: 'Receipt printing is currently supported on Windows and Linux.',
+      };
+    }
+
     const dir = await mkdtemp(join(tmpdir(), 'nouvo-receipt-'));
     const file = join(dir, 'receipt.bin');
     try {
       await writeFile(file, buildEscPos(input.lines, input.paperWidthMm), { mode: 0o600 });
-      const { stdout } = await execFileAsync('lp', ['-d', queue, '-o', 'raw', file], {
+      const { stdout } = await execFileAsync('lp', ['-d', linuxQueue, '-o', 'raw', file], {
         timeout: 10000,
         maxBuffer: 2048,
       });

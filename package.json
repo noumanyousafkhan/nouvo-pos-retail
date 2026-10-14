@@ -1,6 +1,6 @@
 {
   "name": "nouvo-pos-cash-carry",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "private": true,
   "description": "Offline-first desktop POS for cash-and-carry retail stores",
   "homepage": "https://nextash.com",
