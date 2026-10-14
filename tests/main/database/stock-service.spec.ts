@@ -142,7 +142,12 @@ describe('stock ledger service', () => {
         "SELECT a.code, jl.debit_minor AS debit, jl.credit_minor AS credit FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.source_type='manual' ORDER BY je.posted_at, jl.line_number",
       )
       .all() as { code: string; debit: number; credit: number }[];
-    expect(accounts.map((row) => row.code)).toEqual(['1200', '3000', '5010', '1200']);
+    expect(accounts.map((row) => `${row.code}:${row.debit > 0 ? 'D' : 'C'}`).sort()).toEqual([
+      '1200:C',
+      '1200:D',
+      '3000:C',
+      '5010:D',
+    ]);
   });
 
   it('updates weighted-average unit cost when manual goods receipts arrive at a new cost', () => {
