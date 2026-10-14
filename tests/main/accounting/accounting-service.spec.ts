@@ -260,7 +260,32 @@ describe('double-entry accounting postings', () => {
     expect(statement.inventoryChangeMinor).toBe(-1000);
     expect(statement.salesTaxPayableChangeMinor).toBe(200);
     expect(statement.operatingCashFlowMinor).toBe(2200);
+    expect(statement.investingCashFlowMinor).toBe(0);
+    expect(statement.financingCashFlowMinor).toBe(0);
     expect(statement.cashChangeMinor).toBe(2200);
     expect(statement.reconciliationDifferenceMinor).toBe(0);
   });
+});
+
+it('classifies manual cash contributions as financing and reconciles the cash-flow statement', () => {
+  const { database, storeId } = setup();
+  const service = new AccountingService(database.connection, storeId);
+  const accounts = service.listAccounts();
+  const cash = accounts.find((account) => account.code === '1000')!;
+  const capital = accounts.find((account) => account.code === '3000')!;
+  service.postManualJournal({
+    description: 'Owner capital contribution',
+    lines: [
+      { accountId: cash.id, debitMinor: 5000, creditMinor: 0, memo: 'Capital received' },
+      { accountId: capital.id, debitMinor: 0, creditMinor: 5000, memo: 'Owner capital' },
+    ],
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const statement = service.getIndirectCashFlowStatement(today, today);
+  expect(statement.operatingCashFlowMinor).toBe(0);
+  expect(statement.investingCashFlowMinor).toBe(0);
+  expect(statement.financingCashFlowMinor).toBe(5000);
+  expect(statement.cashChangeMinor).toBe(5000);
+  expect(statement.openingStockEquityChangeMinor).toBe(0);
+  expect(statement.reconciliationDifferenceMinor).toBe(0);
 });

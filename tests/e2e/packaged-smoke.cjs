@@ -247,6 +247,8 @@ async function main() {
     await page.getByRole('link', { name: 'Synchronization' }).click({ force: true });
     await page.getByRole('heading', { name: 'Synchronization' }).waitFor();
     await page.getByRole('heading', { name: 'Central server connection' }).waitFor();
+    await page.getByText(/Events are safely queued locally/).waitFor();
+    await page.getByText(/Queued locally until server configuration/).waitFor();
     console.log('PASS packaged sandboxed launch, first-run owner setup and secure preload bridge');
     console.log('PASS packaged accounting statements and category sales/gross-margin report UI');
     console.log('PASS packaged manual journal posting and reversal dialog');

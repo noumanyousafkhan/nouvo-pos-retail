@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import BaseButton from '@/components/base/BaseButton.vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
@@ -8,6 +8,7 @@ import type { Product } from '@shared/contracts/products';
 import type { SaleResult } from '@shared/contracts/checkout';
 import type { BusinessSettings } from '@shared/contracts/settings';
 import type { CashSession } from '@shared/contracts/cash-sessions';
+import type { SalesReport } from '@shared/contracts/reports';
 import { RouterLink } from 'vue-router';
 
 type CartLine = { product: Product; quantityMilli: number };
@@ -21,6 +22,8 @@ type PaymentLine = {
 };
 
 const products = ref<Product[]>([]);
+const popularProducts = ref<Product[]>([]);
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
 const currencyCode = ref('PKR');
 const taxBehavior = ref<'exclusive' | 'inclusive'>('exclusive');
 const cart = ref<CartLine[]>([]);
@@ -31,6 +34,7 @@ const saving = ref(false);
 const paymentOpen = ref(false);
 const receipt = ref<SaleResult | null>(null);
 const activeCashierSession = ref<CashSession | null>(null);
+const cashierSessionLoadError = ref('');
 const errorMessage = ref('');
 const successMessage = ref('');
 const paymentLines = ref<PaymentLine[]>([]);
@@ -101,12 +105,12 @@ async function loadBusinessSettings() {
   }
 }
 
-async function loadProducts() {
+async function loadProducts(query = search.value) {
   loading.value = true;
   errorMessage.value = '';
   try {
     products.value = await window.nouvo.listProducts({
-      search: search.value,
+      search: query.trim(),
       includeArchived: false,
     });
   } catch (error) {
@@ -115,6 +119,39 @@ async function loadProducts() {
     loading.value = false;
   }
 }
+
+async function loadPopularProducts() {
+  try {
+    const report: SalesReport = await window.nouvo.getSalesReport({});
+    const rankedNames = new Map(
+      report.topProducts.map((item, index) => [item.productName.toLocaleLowerCase(), index]),
+    );
+    const catalogue = await window.nouvo.listProducts({ includeArchived: false });
+    popularProducts.value = catalogue
+      .filter(
+        (product) =>
+          product.isActive &&
+          product.stockOnHandMilli > 0 &&
+          rankedNames.has(product.name.toLocaleLowerCase()),
+      )
+      .sort(
+        (a, b) =>
+          (rankedNames.get(a.name.toLocaleLowerCase()) ?? 999) -
+          (rankedNames.get(b.name.toLocaleLowerCase()) ?? 999),
+      )
+      .slice(0, 6);
+  } catch {
+    popularProducts.value = [];
+  }
+}
+
+watch(search, (value) => {
+  if (searchTimer) clearTimeout(searchTimer);
+  // Wait briefly for a barcode scanner's rapid input; normal typing updates live.
+  searchTimer = setTimeout(() => {
+    void loadProducts(value);
+  }, 100);
+});
 
 function addToCart(product: Product) {
   errorMessage.value = '';
@@ -172,7 +209,7 @@ async function searchOrScan() {
   if (exactMatch) {
     addToCart(exactMatch);
     search.value = '';
-    await loadProducts();
+    await loadProducts('');
     await nextTick();
     searchInput.value?.focus();
   }
@@ -240,7 +277,7 @@ async function completeCheckout() {
     paymentOpen.value = false;
     cart.value = [];
     successMessage.value = `Sale ${result.receiptNumber} saved successfully.`;
-    await loadProducts();
+    await Promise.all([loadProducts(''), loadPopularProducts()]);
   } catch (error) {
     errorMessage.value =
       error instanceof Error
@@ -258,15 +295,21 @@ function closeReceipt() {
 
 onMounted(async () => {
   await Promise.all([
-    loadProducts(),
+    loadProducts(''),
+    loadPopularProducts(),
     loadBusinessSettings(),
     window.nouvo
       .getActiveCashierSession()
       .then((session) => {
         activeCashierSession.value = session;
+        cashierSessionLoadError.value = '';
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         activeCashierSession.value = null;
+        cashierSessionLoadError.value =
+          error instanceof Error
+            ? error.message
+            : 'Could not check the cashier shift. Open Cashier shifts and verify the shift status.';
       }),
   ]);
   await nextTick();
@@ -277,21 +320,27 @@ onMounted(async () => {
 <template>
   <div class="checkout-page">
     <PageHeader
-      eyebrow="FAST COUNTER SALES"
       title="Checkout"
-      description="Scan a barcode or search products, review the cart, then take payment."
+      description="Scan or search for a product, add it to the cart, then take payment."
     />
     <div v-if="!activeCashierSession" class="checkout-shift-required" role="alert">
       <span class="checkout-shift-required__icon" aria-hidden="true">₨</span>
       <div>
-        <strong>Open a cashier shift before taking payments</strong>
+        <strong>{{
+          cashierSessionLoadError
+            ? 'Could not verify cashier shift'
+            : 'Open a cashier shift before taking payments'
+        }}</strong>
         <p>
-          Record the opening cash float first. Sales and refunds are attached to the active shift
-          for accurate drawer reconciliation.
+          {{
+            cashierSessionLoadError ||
+            'Record the opening cash float first. Sales and refunds are attached to the active shift for accurate drawer reconciliation.'
+          }}
         </p>
       </div>
       <RouterLink to="/cash-sessions"
-        >Open cashier shift <span aria-hidden="true">→</span></RouterLink
+        >{{ cashierSessionLoadError ? 'Check cashier shift' : 'Open cashier shift' }}
+        <span aria-hidden="true">→</span></RouterLink
       >
     </div>
     <div v-if="successMessage" class="inventory-alert inventory-alert--success" role="status">
@@ -317,15 +366,44 @@ onMounted(async () => {
               placeholder="Scan barcode or search products…"
               autocomplete="off"
             />
-            <BaseButton type="submit" variant="secondary" :loading="loading">Search</BaseButton>
+            <button
+              v-if="search"
+              type="button"
+              class="checkout-search-clear"
+              aria-label="Clear search"
+              @click="search = ''"
+            >
+              ×
+            </button>
+            <BaseButton type="submit" variant="secondary" :loading="loading"
+              >Add exact code</BaseButton
+            >
           </form>
           <div class="checkout-catalogue-heading">
             <div>
               <strong>Products</strong
               ><small>{{ products.length }} item{{ products.length === 1 ? '' : 's' }} found</small>
             </div>
-            <button type="button" @click="loadProducts">↻ Refresh</button>
+            <button type="button" @click="loadProducts()">↻ Refresh</button>
           </div>
+          <section v-if="!search.trim() && popularProducts.length" class="checkout-popular">
+            <div class="checkout-popular-heading">
+              <strong>Best sellers</strong><small>Most sold products</small>
+            </div>
+            <div class="checkout-popular-row">
+              <button
+                v-for="product in popularProducts"
+                :key="product.id"
+                class="checkout-popular-tile"
+                type="button"
+                @click="addToCart(product)"
+              >
+                <span>{{ product.name.slice(0, 1).toUpperCase() }}</span
+                ><strong>{{ product.name }}</strong
+                ><small>{{ formatMoney(product.sellingPriceMinor) }}</small>
+              </button>
+            </div>
+          </section>
           <div v-if="loading && products.length === 0" class="checkout-empty">
             <span class="inventory-spinner"></span><strong>Loading catalogue…</strong>
           </div>
@@ -334,7 +412,7 @@ onMounted(async () => {
             <strong>No products found</strong>
             <p>Create a product in Inventory, then receive stock before selling it.</p>
           </div>
-          <div v-else class="checkout-product-grid">
+          <div v-else class="checkout-product-grid checkout-product-grid--scroll">
             <button
               v-for="product in products"
               :key="product.id"
@@ -434,10 +512,15 @@ onMounted(async () => {
             </div>
           </div>
           <div class="checkout-pay-area">
-            <BaseButton block :disabled="cart.length === 0 || saving" @click="openPayment"
+            <BaseButton
+              block
+              :disabled="cart.length === 0 || saving || !activeCashierSession"
+              @click="openPayment"
               >Continue to payment <span>→</span></BaseButton
-            ><small
+            ><small v-if="activeCashierSession"
               ><span class="status-dot"></span> Sale is saved locally before success is shown</small
+            ><small v-else class="checkout-payment-hint"
+              >Open a cashier shift above to enable payment.</small
             >
           </div>
         </BaseCard>

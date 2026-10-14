@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import type { SyncOverview } from '@shared/contracts/sync';
 
 const overview = ref<SyncOverview | null>(null);
@@ -15,6 +15,16 @@ const counterToken = ref('');
 const secureStorageAvailable = ref(false);
 const configError = ref('');
 const configNotice = ref('');
+const eventsPage = ref(1);
+const eventsPageSize = 10;
+const eventPages = computed(() =>
+  Math.max(1, Math.ceil((overview.value?.events.length ?? 0) / eventsPageSize)),
+);
+const pagedEvents = computed(() => {
+  const events = overview.value?.events ?? [];
+  const start = (eventsPage.value - 1) * eventsPageSize;
+  return events.slice(start, start + eventsPageSize);
+});
 const statusLabels: Record<SyncOverview['status'], string> = {
   not_configured: 'Not configured',
   idle: 'Waiting to sync',
@@ -71,7 +81,12 @@ async function refresh(): Promise<void> {
   loading.value = true;
   actionError.value = '';
   try {
-    overview.value = await window.nouvo.getSyncOverview();
+    const loadedOverview = await window.nouvo.getSyncOverview();
+    overview.value = loadedOverview;
+    eventsPage.value = Math.min(
+      eventsPage.value,
+      Math.max(1, Math.ceil(loadedOverview.events.length / eventsPageSize)),
+    );
   } catch (error) {
     actionError.value =
       error instanceof Error ? error.message : 'Could not load synchronization status.';
@@ -98,7 +113,12 @@ async function retryFailed(): Promise<void> {
   notice.value = '';
   try {
     const count = await window.nouvo.retryFailedSyncEvents();
-    overview.value = await window.nouvo.getSyncOverview();
+    const loadedOverview = await window.nouvo.getSyncOverview();
+    overview.value = loadedOverview;
+    eventsPage.value = Math.min(
+      eventsPage.value,
+      Math.max(1, Math.ceil(loadedOverview.events.length / eventsPageSize)),
+    );
     notice.value = count
       ? 'Returned ' + count + ' failed event(s) to the retry queue.'
       : 'There are no failed events to retry.';
@@ -219,7 +239,7 @@ onMounted(() => {
         ><small>{{
           overview.configured
             ? 'Server URL and token are configured'
-            : 'Configure the central API URL and counter token above to enable remote delivery'
+            : 'Events are safely queued locally. Configure the central API URL and counter token to upload them.'
         }}</small>
       </div>
       <button
@@ -234,7 +254,11 @@ onMounted(() => {
     <div v-if="overview" class="sync-metrics">
       <article class="sync-metric">
         <span>Pending</span><strong>{{ overview.pendingCount }}</strong
-        ><small>Waiting for retry window or upload</small>
+        ><small>{{
+          overview.configured
+            ? 'Waiting for retry window or upload'
+            : 'Queued locally until server configuration'
+        }}</small>
       </article>
       <article class="sync-metric">
         <span>In flight</span><strong>{{ overview.inFlightCount }}</strong
@@ -266,7 +290,7 @@ onMounted(() => {
           <h2>Outbox events</h2>
           <p>Latest 100 local events, newest first.</p>
         </div>
-        <span>{{ overview?.events.length ?? 0 }} shown</span>
+        <span>{{ overview?.events.length ?? 0 }} events · {{ pagedEvents.length }} on page</span>
       </div>
       <div v-if="loading && !overview" class="sync-empty">Loading synchronization details…</div>
       <div v-else-if="!overview?.events.length" class="sync-empty">
@@ -285,7 +309,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="event in overview.events" :key="event.id">
+            <tr v-for="event in pagedEvents" :key="event.id">
               <td>
                 <strong>{{ event.eventType }}</strong
                 ><small>{{ event.id.slice(0, 8) }}</small>
@@ -305,6 +329,37 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+      <nav
+        v-if="(overview?.events.length ?? 0) > eventsPageSize"
+        class="sync-pagination"
+        aria-label="Outbox event pages"
+      >
+        <span>Page {{ eventsPage }} of {{ eventPages }}</span>
+        <div class="sync-pagination__controls">
+          <button type="button" :disabled="eventsPage === 1" @click="eventsPage = 1">First</button>
+          <button type="button" :disabled="eventsPage === 1" @click="eventsPage--">Previous</button>
+          <button
+            v-for="page in eventPages"
+            :key="page"
+            type="button"
+            :class="{ 'is-active': page === eventsPage }"
+            :aria-current="page === eventsPage ? 'page' : undefined"
+            @click="eventsPage = page"
+          >
+            {{ page }}
+          </button>
+          <button type="button" :disabled="eventsPage === eventPages" @click="eventsPage++">
+            Next
+          </button>
+          <button
+            type="button"
+            :disabled="eventsPage === eventPages"
+            @click="eventsPage = eventPages"
+          >
+            Last
+          </button>
+        </div>
+      </nav>
     </section>
   </section>
 </template>

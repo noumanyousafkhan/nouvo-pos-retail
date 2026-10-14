@@ -22,6 +22,12 @@ const authState = ref<AuthState | null>(null);
 const returningSale = ref<SaleResult | null>(null);
 const returnOperation = ref<'return' | 'void'>('return');
 const returnReceipt = ref<SaleReturnResult | null>(null);
+const page = ref(1);
+const pageSize = 10;
+const totalPages = computed(() => Math.max(1, Math.ceil(sales.value.length / pageSize)));
+const pagedSales = computed(() =>
+  sales.value.slice((page.value - 1) * pageSize, page.value * pageSize),
+);
 const totalListedMinor = computed(() =>
   sales.value.reduce((sum, sale) => sum + sale.totalMinor, 0),
 );
@@ -42,6 +48,7 @@ async function loadSales() {
       ...(toDate.value ? { toDate: toDate.value } : {}),
       limit: 200,
     });
+    page.value = 1;
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Sales history could not be loaded.';
@@ -50,6 +57,24 @@ async function loadSales() {
   }
 }
 
+function setSalesPeriod(period: 'daily' | 'weekly' | 'monthly' | 'all' | 'custom') {
+  const now = new Date();
+  const iso = (date: Date) =>
+    new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  const end = iso(now);
+  const start = new Date(now);
+  if (period === 'daily') start.setDate(start.getDate());
+  else if (period === 'weekly') start.setDate(start.getDate() - 6);
+  else if (period === 'monthly') start.setDate(start.getDate() - 29);
+  if (period === 'all') {
+    fromDate.value = '';
+    toDate.value = '';
+  } else if (period !== 'custom') {
+    fromDate.value = iso(start);
+    toDate.value = end;
+  }
+  if (period !== 'custom') void loadSales();
+}
 async function viewReceipt(sale: SaleListItem) {
   errorMessage.value = '';
   try {
@@ -125,6 +150,12 @@ onMounted(initialize);
             placeholder="Search receipt number or product…"
             aria-label="Search receipt number or product"
         /></label>
+        <div class="sales-history-presets" aria-label="Sales period">
+          <button type="button" @click="setSalesPeriod('daily')">Daily</button>
+          <button type="button" @click="setSalesPeriod('weekly')">Weekly</button>
+          <button type="button" @click="setSalesPeriod('monthly')">Monthly</button>
+          <button type="button" @click="setSalesPeriod('all')">All time</button>
+        </div>
         <label class="sales-history-date">From <input v-model="fromDate" type="date" /></label>
         <label class="sales-history-date">To <input v-model="toDate" type="date" /></label>
         <BaseButton type="submit" variant="secondary" :loading="loading">Apply filters</BaseButton>
@@ -151,7 +182,7 @@ onMounted(initialize);
             </tr>
           </thead>
           <tbody>
-            <tr v-for="sale in sales" :key="sale.id">
+            <tr v-for="sale in pagedSales" :key="sale.id">
               <td>
                 <strong class="sales-receipt-number">#{{ sale.receiptNumber }}</strong
                 ><small class="sales-business-name">{{ sale.businessName }}</small>
@@ -211,9 +242,28 @@ onMounted(initialize);
       </div>
       <div class="inventory-table-footer">
         <span
-          >Showing {{ sales.length }} transaction{{ sales.length === 1 ? '' : 's' }} · Maximum 200
-          per query</span
-        ><button type="button" @click="loadSales">↻ Refresh</button>
+          >Showing {{ pagedSales.length }} of {{ sales.length }} matching transactions · up to 200
+          loaded</span
+        >
+        <div class="sales-history-pagination">
+          <button type="button" :disabled="page === 1" @click="page = 1">First</button>
+          <button type="button" :disabled="page === 1" @click="page--">Previous</button>
+          <button
+            v-for="number in totalPages"
+            :key="number"
+            type="button"
+            :class="{ 'is-active': page === number }"
+            :aria-current="page === number ? 'page' : undefined"
+            @click="page = number"
+          >
+            {{ number }}
+          </button>
+          <button type="button" :disabled="page === totalPages" @click="page++">Next</button>
+          <button type="button" :disabled="page === totalPages" @click="page = totalPages">
+            Last
+          </button>
+          <button type="button" @click="loadSales">↻ Refresh</button>
+        </div>
       </div>
     </BaseCard>
     <ReceiptPreview

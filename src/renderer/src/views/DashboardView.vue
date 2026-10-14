@@ -4,15 +4,43 @@ import { RouterLink } from 'vue-router';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
 import type { AppInfo } from '@shared/contracts/app';
+import type { SalesReport } from '@shared/contracts/reports';
+import type { BusinessSettings } from '@shared/contracts/settings';
 
 const appInfo = ref<AppInfo | null>(null);
 const infoError = ref('');
+const todayReport = ref<SalesReport | null>(null);
+const currencyCode = ref('PKR');
+const salesLoading = ref(true);
+const todayDate = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+};
+const money = (minor: number) =>
+  new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: currencyCode.value,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(minor / 100);
 
 onMounted(async () => {
   try {
     appInfo.value = await window.nouvo.getAppInfo();
   } catch {
     infoError.value = 'Desktop bridge unavailable. Restart the app and check its logs.';
+  }
+  try {
+    const [report, settings] = await Promise.all([
+      window.nouvo.getSalesReport({ fromDate: todayDate(), toDate: todayDate() }),
+      window.nouvo.getBusinessSettings(),
+    ]);
+    todayReport.value = report;
+    currencyCode.value = (settings as BusinessSettings).currencyCode;
+  } catch {
+    // Keep the dashboard usable even if the report cannot be loaded.
+  } finally {
+    salesLoading.value = false;
   }
 });
 
@@ -82,6 +110,20 @@ const modules = [
         ><span class="floating-spark spark--two">✧</span>
       </div>
     </section>
+    <RouterLink class="today-sales-panel" to="/reports" aria-label="Open reports for today's sales">
+      <div class="today-sales-copy">
+        <span class="today-sales-label">TODAY'S SALES</span>
+        <strong>{{ salesLoading ? 'Loading…' : money(todayReport?.totalMinor ?? 0) }}</strong>
+        <span class="today-sales-caption">Net sales after recorded refunds</span>
+      </div>
+      <div class="today-sales-meta">
+        <span class="today-sales-count">{{
+          salesLoading ? '—' : (todayReport?.saleCount ?? 0)
+        }}</span>
+        <span>completed sales today</span>
+        <span class="today-sales-link">View sales report ↗</span>
+      </div>
+    </RouterLink>
     <div class="section-heading">
       <div>
         <h2>Core modules</h2>

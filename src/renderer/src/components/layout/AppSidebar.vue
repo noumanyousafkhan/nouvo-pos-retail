@@ -15,6 +15,7 @@ const navigation = [
   { label: 'Reports', to: '/reports', icon: '▥', permission: 'reports.view' },
   { label: 'Accounting', to: '/accounting', icon: '∑', permission: 'accounting.view' },
   { label: 'Synchronization', to: '/sync', icon: '↻', permission: 'sync.view' },
+  { label: 'Branding', to: '/branding', icon: '✦', permission: 'settings.manage' },
   { label: 'Settings', to: '/settings', icon: '⚙', permission: 'settings.manage' },
 ];
 const visibleNavigation = computed(() =>
@@ -40,7 +41,6 @@ onMounted(async () => {
       <RouterLink v-for="item in visibleNavigation" :key="item.to" :to="item.to" class="nav-link">
         <span class="nav-link__icon" aria-hidden="true">{{ item.icon }}</span>
         <span>{{ item.label }}</span>
-        <span v-if="item.to === '/checkout'" class="nav-link__shortcut">F2</span>
       </RouterLink>
     </nav>
     <div class="sidebar-bottom">
@@ -53,10 +53,6 @@ onMounted(async () => {
           ><small>{{ authState.user.role.replace('_', ' ') }}</small>
         </div>
         <button type="button" aria-label="Sign out" title="Sign out" @click="signOut">↪</button>
-      </div>
-      <div class="connection-card">
-        <span class="connection-dot"></span>
-        <div><strong>Offline-first mode</strong><small>Local database active</small></div>
       </div>
       <p class="sidebar-footnote">Built for busy retail counters.</p>
     </div>

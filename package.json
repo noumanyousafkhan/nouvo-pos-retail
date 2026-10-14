@@ -1,6 +1,6 @@
 {
   "name": "nouvo-pos-cash-carry",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "private": true,
   "description": "Offline-first desktop POS for cash-and-carry retail stores",
   "homepage": "https://nextash.com",
@@ -17,7 +17,12 @@
     "format:check": "prettier --check src tests docs *.json *.ts *.mjs *.md",
     "format": "prettier --write src tests docs *.json *.ts *.mjs *.md",
     "preview": "electron-vite preview",
-    "test:e2e:linux": "xvfb-run -a node tests/e2e/packaged-smoke.cjs"
+    "test:e2e:linux": "xvfb-run -a node tests/e2e/packaged-smoke.cjs",
+    "prepare:win-native": "mkdir -p build && if [ ! -s build/vc_redist.x64.exe ]; then curl -fL --retry 3 --retry-delay 2 https://aka.ms/vc14/vc_redist.x64.exe -o build/vc_redist.x64.exe; fi && test -s build/vc_redist.x64.exe && if [ ! -s /tmp/node-rs-argon2-win32-x64-msvc-2.2.2.tgz ]; then npm pack @node-rs/argon2-win32-x64-msvc@2.2.2 --pack-destination /tmp; fi && mkdir -p node_modules/@node-rs/argon2-win32-x64-msvc && tar -C node_modules/@node-rs/argon2-win32-x64-msvc --strip-components=1 -xzf /tmp/node-rs-argon2-win32-x64-msvc-2.2.2.tgz && test -s node_modules/@node-rs/argon2-win32-x64-msvc/argon2.win32-x64-msvc.node && cp node_modules/@node-rs/argon2-win32-x64-msvc/argon2.win32-x64-msvc.node node_modules/@node-rs/argon2/argon2.win32-x64-msvc.node",
+    "build:win": "npm run prepare:win-native && electron-builder --win nsis",
+    "test:e2e:auth:linux": "xvfb-run -a node tests/e2e/auth-smoke.cjs",
+    "test:e2e:retail:linux": "xvfb-run -a node tests/e2e/retail-workflow.cjs",
+    "test:e2e:responsive:linux": "xvfb-run -a node tests/e2e/responsive-smoke.cjs"
   },
   "build": {
     "appId": "com.nouvo.pos.cashcarry",
@@ -40,7 +45,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "perMachine": true
     },
     "linux": {
       "target": [
@@ -51,7 +58,11 @@
       "icon": "build/icon.png",
       "maintainer": "NOUVO POS Team",
       "syncDesktopName": true
-    }
+    },
+    "asarUnpack": [
+      "node_modules/@node-rs/argon2/argon2.win32-x64-msvc.node",
+      "node_modules/@node-rs/argon2-win32-x64-msvc/**"
+    ]
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",
@@ -81,5 +92,8 @@
     "vitest": "5.0.4",
     "vue-eslint-parser": "10.4.1",
     "vue-tsc": "3.3.13"
+  },
+  "optionalDependencies": {
+    "@node-rs/argon2-win32-x64-msvc": "2.2.2"
   }
 }

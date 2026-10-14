@@ -38,6 +38,8 @@ const indirectCashFlow = ref<{
   salesTaxPayableChangeMinor: number;
   openingStockEquityChangeMinor: number;
   operatingCashFlowMinor: number;
+  investingCashFlowMinor: number;
+  financingCashFlowMinor: number;
   cashChangeMinor: number;
   reconciliationDifferenceMinor: number;
 } | null>(null);
@@ -365,9 +367,8 @@ onMounted(async () => {
           <div>
             <h2>Indirect cash-flow reconciliation</h2>
             <p>
-              Net income adjusted for inventory, supplier payables, sales tax payable and non-cash
-              opening-stock entries. The difference should be zero when cash-affecting entries are
-              classified in the ledger.
+              Indirect operating cash flow plus separately classified investing and financing
+              movements. The difference flags cash movements that still need account classification.
             </p>
           </div>
           <span class="cash-session-count"
@@ -410,6 +411,18 @@ onMounted(async () => {
                 <th class="reports-number">
                   {{ money(indirectCashFlow?.operatingCashFlowMinor ?? 0) }}
                 </th>
+              </tr>
+              <tr>
+                <td>Net investing cash flow</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.investingCashFlowMinor ?? 0) }}
+                </td>
+              </tr>
+              <tr>
+                <td>Net financing cash flow</td>
+                <td class="reports-number">
+                  {{ money(indirectCashFlow?.financingCashFlowMinor ?? 0) }}
+                </td>
               </tr>
               <tr>
                 <td>Actual cash / clearing account change</td>

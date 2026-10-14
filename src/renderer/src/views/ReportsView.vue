@@ -19,6 +19,7 @@ const thirtyDaysAgo = () => {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 };
 const filters = reactive({ fromDate: thirtyDaysAgo(), toDate: today() });
+const activePeriod = ref<'daily' | 'weekly' | 'monthly' | 'all' | 'custom'>('monthly');
 const money = (minor: number) =>
   new Intl.NumberFormat(undefined, {
     style: 'currency',
@@ -33,7 +34,10 @@ async function loadReport() {
   errorMessage.value = '';
   try {
     const [result, settings] = await Promise.all([
-      window.nouvo.getSalesReport({ fromDate: filters.fromDate, toDate: filters.toDate }),
+      window.nouvo.getSalesReport({
+        ...(filters.fromDate ? { fromDate: filters.fromDate } : {}),
+        ...(filters.toDate ? { toDate: filters.toDate } : {}),
+      }),
       window.nouvo.getBusinessSettings(),
     ]);
     report.value = result;
@@ -43,6 +47,25 @@ async function loadReport() {
   } finally {
     loading.value = false;
   }
+}
+function setReportPeriod(period: 'daily' | 'weekly' | 'monthly' | 'all' | 'custom') {
+  activePeriod.value = period;
+  if (period === 'custom') return;
+  if (period === 'all') {
+    filters.fromDate = '';
+    filters.toDate = '';
+  } else {
+    const end = new Date();
+    const start = new Date(end);
+    if (period === 'daily') start.setDate(end.getDate());
+    if (period === 'weekly') start.setDate(end.getDate() - 6);
+    if (period === 'monthly') start.setDate(end.getDate() - 29);
+    const iso = (date: Date) =>
+      new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+    filters.fromDate = iso(start);
+    filters.toDate = iso(end);
+  }
+  void loadReport();
 }
 function formatDate(value: string) {
   const date = new Date(`${value}T12:00:00`);
@@ -65,9 +88,36 @@ onMounted(loadReport);
       description="Review completed sales, payment mix, best-selling products and current stock valuation for this counter."
     />
     <BaseCard class="reports-filter-card">
-      <form class="reports-filters" @submit.prevent="loadReport">
+      <form
+        class="reports-filters"
+        @submit.prevent="
+          activePeriod = 'custom';
+          loadReport();
+        "
+      >
+        <div class="reports-period-presets" aria-label="Sales reporting period">
+          <button
+            v-for="item in [
+              { key: 'daily', label: 'Daily' },
+              { key: 'weekly', label: 'Weekly' },
+              { key: 'monthly', label: 'Monthly' },
+              { key: 'all', label: 'Overall / all time' },
+              { key: 'custom', label: 'Custom dates' },
+            ]"
+            :key="item.key"
+            type="button"
+            :class="{ 'is-active': activePeriod === item.key }"
+            @click="setReportPeriod(item.key as 'daily' | 'weekly' | 'monthly' | 'all' | 'custom')"
+          >
+            {{ item.label }}
+          </button>
+        </div>
         <label class="inventory-field"
-          >From date<input v-model="filters.fromDate" type="date" :max="filters.toDate" required
+          >From date<input
+            v-model="filters.fromDate"
+            type="date"
+            :max="filters.toDate"
+            :required="activePeriod !== 'all'"
         /></label>
         <label class="inventory-field"
           >To date<input
@@ -75,12 +125,14 @@ onMounted(loadReport);
             type="date"
             :min="filters.fromDate"
             :max="today()"
-            required
+            :required="activePeriod !== 'all'"
         /></label>
         <button class="reports-apply-button" type="submit" :disabled="loading">
           {{ loading ? 'Loading…' : 'Apply filters' }}
         </button>
-        <span class="reports-period">{{ periodLabel }}</span>
+        <span class="reports-period">{{
+          activePeriod === 'all' ? 'All recorded sales' : periodLabel
+        }}</span>
       </form>
     </BaseCard>
     <div v-if="errorMessage" class="inventory-alert inventory-alert--error" role="alert">

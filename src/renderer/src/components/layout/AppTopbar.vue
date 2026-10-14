@@ -13,8 +13,8 @@ const pageTitle = computed(() => String(route.meta.title ?? 'Workspace'));
       ><strong>{{ pageTitle }}</strong>
     </div>
     <div class="topbar-actions">
-      <div class="local-status"><span class="status-dot"></span><span>Local app</span></div>
-      <div class="avatar" aria-label="Owner profile placeholder">O</div>
+      <div class="local-status"><span class="status-dot"></span><span>Counter workspace</span></div>
+      <div class="avatar" aria-label="NOUVO POS">N</div>
     </div>
   </header>
 </template>

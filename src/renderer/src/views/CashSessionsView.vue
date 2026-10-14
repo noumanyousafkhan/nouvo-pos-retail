@@ -30,7 +30,7 @@ const varianceLabel = computed(() => {
   const amount = active.value.expectedCashMinor;
   return amount < 0
     ? `Cash deficit ${money(Math.abs(amount))}`
-    : `Expected drawer cash ${money(amount)}`;
+    : `Cash expected in drawer ${money(amount)}`;
 });
 
 async function refresh() {
@@ -158,7 +158,7 @@ onMounted(refresh);
     <PageHeader
       eyebrow="CASH CONTROL"
       title="Cashier shifts"
-      description="Track opening float, cash sales, refunds, drawer movements and closing variance for this counter."
+      description="Open the cash drawer, record cash added or removed, and count the money when your shift ends."
     />
     <div v-if="errorMessage" class="inventory-alert inventory-alert--error" role="alert">
       {{ errorMessage }}
@@ -173,9 +173,9 @@ onMounted(refresh);
           ><small>{{ active.openedByName }} · {{ formatDate(active.openedAt) }}</small></BaseCard
         >
         <BaseCard
-          ><span class="cash-session-label">Expected drawer cash</span
+          ><span class="cash-session-label">Cash that should be in drawer</span
           ><strong>{{ money(active.expectedCashMinor) }}</strong
-          ><small>Opening float + cash sales − refunds + movements</small></BaseCard
+          ><small>Starting cash + cash sales − refunds + cash added or removed</small></BaseCard
         >
         <BaseCard
           ><span class="cash-session-label">Cash sales</span
@@ -198,9 +198,9 @@ onMounted(refresh);
           </header>
           <form class="cash-session-form" @submit.prevent="recordMovement">
             <label class="inventory-field"
-              >Movement type<select v-model="movementForm.movementType">
-                <option value="cash_in">Cash in / add float</option>
-                <option value="cash_out">Cash out / petty cash</option>
+              >What do you want to do?<select v-model="movementForm.movementType">
+                <option value="cash_in">Add cash to drawer</option>
+                <option value="cash_out">Take cash out of drawer</option>
               </select></label
             >
             <label class="inventory-field"
@@ -243,7 +243,7 @@ onMounted(refresh);
           <div class="cash-session-expected">{{ varianceLabel }}</div>
           <form class="cash-session-form cash-session-form--single" @submit.prevent="closeShift">
             <label class="inventory-field"
-              >Actual counted cash<input
+              >Cash counted in drawer<input
                 v-model="closeForm.countedCash"
                 type="number"
                 min="0"
@@ -273,7 +273,7 @@ onMounted(refresh);
         </p>
         <form class="cash-session-form cash-session-open-form" @submit.prevent="openShift">
           <label class="inventory-field"
-            >Opening cash float<input
+            >Starting cash in drawer<input
               v-model="openForm.openingFloat"
               type="number"
               min="0"
@@ -281,7 +281,7 @@ onMounted(refresh);
               required
           /></label>
           <label class="inventory-field"
-            >Opening note (optional)<input
+            >Note (optional)<input
               v-model="openForm.openingNote"
               maxlength="500"
               placeholder="e.g. morning shift float"

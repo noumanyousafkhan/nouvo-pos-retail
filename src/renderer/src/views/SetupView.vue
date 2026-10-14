@@ -6,8 +6,22 @@ const router = useRouter();
 const form = reactive({ username: 'owner', displayName: '', password: '', confirmPassword: '' });
 const saving = ref(false);
 const errorMessage = ref('');
+function readableError(error: unknown): string {
+  if (!(error instanceof Error)) return 'Owner setup failed.';
+  return error.message
+    .replace(/^Error invoking remote method '[^']+': Error: /, '')
+    .replace(/^Error: /, '');
+}
+const showPassword = ref(false);
+const showConfirmPassword = ref(false);
 async function setupOwner() {
   errorMessage.value = '';
+  form.username = form.username.trim();
+  if (!/^[A-Za-z0-9._-]{3,40}$/.test(form.username)) {
+    errorMessage.value =
+      'Username must be 3–40 characters and use only English letters, numbers, dots, underscores or hyphens. Spaces are not allowed.';
+    return;
+  }
   if (form.password !== form.confirmPassword) {
     errorMessage.value = 'Passwords do not match.';
     return;
@@ -21,7 +35,7 @@ async function setupOwner() {
     });
     await router.replace('/');
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Owner setup failed.';
+    errorMessage.value = readableError(error);
   } finally {
     saving.value = false;
   }
@@ -46,8 +60,7 @@ async function setupOwner() {
       </div>
       <form class="auth-form" @submit.prevent="setupOwner">
         <label class="inventory-field"
-          >Owner display name <span>*</span
-          ><input
+          >Owner display name ><input
             v-model="form.displayName"
             required
             minlength="2"
@@ -56,8 +69,7 @@ async function setupOwner() {
             placeholder="Your name"
         /></label>
         <label class="inventory-field"
-          >Username <span>*</span
-          ><input
+          >Username ><input
             v-model="form.username"
             required
             minlength="3"
@@ -65,30 +77,76 @@ async function setupOwner() {
             pattern="[A-Za-z0-9._-]+"
             autocomplete="username"
             placeholder="owner"
-        /></label>
-        <label class="inventory-field"
-          >Password <span>*</span
-          ><input
-            v-model="form.password"
-            required
-            minlength="12"
-            maxlength="128"
-            type="password"
-            autocomplete="new-password"
-            placeholder="At least 12 characters"
-          /><small>Stored using Argon2id password hashing.</small></label
+          /><small
+            >3–40 characters. Letters, numbers, dots, underscores and hyphens only; no
+            spaces.</small
+          ></label
         >
         <label class="inventory-field"
-          >Confirm password <span>*</span
-          ><input
-            v-model="form.confirmPassword"
-            required
-            minlength="12"
-            maxlength="128"
-            type="password"
-            autocomplete="new-password"
-            placeholder="Enter password again"
-        /></label>
+          >Password
+          <div class="auth-password-input">
+            <input
+              v-model="form.password"
+              required
+              minlength="12"
+              maxlength="128"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              placeholder="At least 12 characters"
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-label="showPassword ? 'Hide password' : 'Show password'"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              <svg v-if="!showPassword" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="m3 3 18 18M10.6 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.8M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.5 0 2.8-.4 4-1"
+                />
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+              </svg>
+            </button>
+          </div>
+          <small>Stored using Argon2id password hashing.</small>
+        </label>
+        <label class="inventory-field"
+          >Confirm password
+          <div class="auth-password-input">
+            <input
+              v-model="form.confirmPassword"
+              required
+              minlength="12"
+              maxlength="128"
+              :type="showConfirmPassword ? 'text' : 'password'"
+              autocomplete="new-password"
+              placeholder="Enter password again"
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-label="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+              :aria-pressed="showConfirmPassword"
+              @click="showConfirmPassword = !showConfirmPassword"
+            >
+              <svg v-if="!showConfirmPassword" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="m3 3 18 18M10.6 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.8M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.5 0 2.8-.4 4-1"
+                />
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+              </svg>
+            </button>
+          </div>
+        </label>
         <BaseButton block type="submit" :loading="saving"
           >Create owner and open POS <span>→</span></BaseButton
         >

@@ -102,11 +102,26 @@ async function loadUsers() {
 }
 
 async function createUser() {
-  userBusy.value = true;
   userError.value = '';
   userMessage.value = '';
+  const username = newUser.username.trim();
+  const displayName = newUser.displayName.trim();
+  if (!/^[A-Za-z0-9._-]{3,40}$/.test(username)) {
+    userError.value =
+      'Username must be 3–40 characters and use only letters, numbers, dots, underscores or hyphens.';
+    return;
+  }
+  if (displayName.length < 2 || displayName.length > 100) {
+    userError.value = 'Display name must be between 2 and 100 characters.';
+    return;
+  }
+  if (newUser.password.length < 12 || newUser.password.length > 128) {
+    userError.value = 'Temporary password must be between 12 and 128 characters.';
+    return;
+  }
+  userBusy.value = true;
   try {
-    await window.nouvo.createUser({ ...newUser });
+    await window.nouvo.createUser({ ...newUser, username, displayName });
     newUser.username = '';
     newUser.displayName = '';
     newUser.password = '';
@@ -194,67 +209,6 @@ onMounted(() => {
     </div>
 
     <form class="settings-layout" @submit.prevent="saveSettings">
-      <BaseCard class="settings-card">
-        <header class="settings-card-header">
-          <span class="settings-icon">▦</span>
-          <div>
-            <h2>Business identity</h2>
-            <p>Shown in the application and saved receipt snapshots.</p>
-          </div>
-        </header>
-        <div class="settings-fields-grid">
-          <label class="inventory-field settings-field-wide"
-            >Business / shop name <span>*</span
-            ><input
-              v-model="form.name"
-              required
-              maxlength="160"
-              placeholder="Your registered shop name"
-          /></label>
-          <label class="inventory-field"
-            >Currency code <span>*</span
-            ><input
-              v-model="form.currencyCode"
-              required
-              minlength="3"
-              maxlength="3"
-              pattern="[A-Za-z]{3}"
-              @input="form.currencyCode = form.currencyCode.toUpperCase()"
-              placeholder="PKR"
-            /><small>ISO 4217 code, e.g. PKR, USD or SAR.</small></label
-          >
-          <label class="inventory-field"
-            >Business timezone <span>*</span
-            ><input
-              v-model="form.timezone"
-              required
-              maxlength="100"
-              placeholder="Asia/Karachi"
-            /><small>Use an IANA timezone identifier.</small></label
-          >
-          <label class="inventory-field settings-field-wide"
-            >Business address<textarea
-              v-model="form.address"
-              rows="2"
-              maxlength="500"
-              placeholder="Shop address for receipts"
-            />
-          </label>
-          <label class="inventory-field"
-            >Phone number<input
-              v-model="form.phone"
-              maxlength="80"
-              placeholder="Business contact number"
-          /></label>
-          <label class="inventory-field"
-            >Registration / tax number<input
-              v-model="form.businessRegistrationNumber"
-              maxlength="100"
-              placeholder="Optional registration ID"
-          /></label>
-        </div>
-      </BaseCard>
-
       <BaseCard class="settings-card">
         <header class="settings-card-header">
           <span class="settings-icon settings-icon--tax">%</span>
@@ -400,7 +354,6 @@ onMounted(() => {
           <label class="inventory-field"
             >Username<input
               v-model="newUser.username"
-              required
               minlength="3"
               maxlength="40"
               pattern="[A-Za-z0-9._-]+"
@@ -409,7 +362,6 @@ onMounted(() => {
           <label class="inventory-field"
             >Display name<input
               v-model="newUser.displayName"
-              required
               minlength="2"
               maxlength="100"
               placeholder="Staff member name"
@@ -417,7 +369,6 @@ onMounted(() => {
           <label class="inventory-field"
             >Temporary password<input
               v-model="newUser.password"
-              required
               minlength="12"
               maxlength="128"
               type="password"
@@ -486,7 +437,7 @@ onMounted(() => {
 
       <div class="settings-actions">
         <span v-if="loading">Loading saved settings…</span
-        ><span v-else>Settings are stored locally and queued for future sync.</span
+        ><span v-else>Settings are saved on this computer. They will sync when sync is set up.</span
         ><BaseButton type="submit" :loading="saving" :disabled="loading"
           >Save business settings</BaseButton
         >

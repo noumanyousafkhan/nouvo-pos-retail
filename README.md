@@ -1,61 +1,122 @@
 # NOUVO POS Cash & Carry
 
-Offline-first Windows/Linux desktop POS built with Electron, Vue 3, TypeScript, Vite, Pinia and Tailwind CSS.
+Offline-first desktop point-of-sale software for small cash-and-carry and retail shops. Built with Electron, Vue 3, TypeScript, Vite, Pinia, Tailwind CSS, SQLite and Zod.
 
-## Current milestone
+> **Release status:** The repository includes automated unit and desktop end-to-end tests. Run the checks below before distributing a build. Windows installation and upgrade behavior must still be verified on a real Windows machine; Linux/Wine testing is not a substitute.
 
-**Phase 4 checkout and payment flow is implemented on top of the product/stock catalogue and local database; the POS is still under development.** The Electron main process initializes a per-counter SQLite database, runs checksum-verified versioned migrations, enables foreign keys/WAL/FULL synchronous durability, and checks database integrity. The initial schema includes stores, counters, users, products/barcodes, stock movements, sales and immutable line snapshots, payments, an outbox, branding revisions, and audit events. Product create/edit/archive, SKU/barcode validation, inventory search, counter stock balances, stock receiving/adjustments/write-offs, barcode-first checkout, split payments, cash change, immutable sale/receipt snapshots, idempotent checkout requests, searchable sales history, saved receipt preview/system print dialog, editable business identity, currency, timezone, tax mode and receipt settings, audit events, durable outbox events and verified database backup/restore are implemented. Authentication/authorization, central synchronization, accounting, direct thermal-printer configuration, returns/voids and role-based authorization, returns/voids, central synchronization and direct thermal-printer configuration are not yet production-ready. Do not use this build for real transactions.
+## Features
+
+- Local-first operation with a SQLite database managed per counter/device.
+- User authentication and role-aware application navigation.
+- Product catalogue, SKU/barcode lookup, categories, stock receipts, adjustments and write-offs.
+- Barcode-first checkout, cart quantities, payment methods, split payments and cash change.
+- Cashier shifts, sales history, receipt preview/printing and sale/line snapshots.
+- Returns and void workflows, purchasing and supplier payments.
+- Sales, stock, margin and accounting reports; accounting journal and reconciliation workflows.
+- Store branding, receipt settings, database backup/restore and audit history.
+- Durable sync outbox and an optional PostgreSQL central sync service for multi-counter deployments.
+- Responsive layout for smaller counter displays and larger monitors.
+
+Feature availability and role permissions should be checked against the current UI and requirements documents; the optional central service is not a turnkey production-hosted deployment.
 
 ## Requirements
 
-- Node.js 22.x (current inspected machine: v22.23.3)
-- npm 10.x (current inspected machine: v10.9.9)
-- Windows or Linux desktop environment
-- Network access for first dependency installation; runtime checkout is intended to work offline
+- Node.js 22.x
+- npm 10.x or compatible
+- Windows or Linux for development; Linux end-to-end tests use Xvfb
+- Network access for installing dependencies and building Windows prerequisites; normal local checkout is designed to work offline
 
-## Development
+## Get started
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-## Checks
+If you have an existing local working copy and intentionally changed the lockfile, use `npm install` instead of `npm ci`.
+
+## Quality checks
+
+Run from the repository root:
 
 ```bash
-npm run typecheck
-npm test
 npm run lint
 npm run format:check
+npm run typecheck
+npm test
 npm run build
+npm audit --omit=dev
 ```
 
-## Packaging
+The build runs type-checking, unit tests and the Electron/Vite production build. The current test suite includes database migrations and persistence, authentication, inventory and stock movements, checkout and payments, returns, purchasing, cash sessions, reporting, accounting, backup/restore and sync behavior.
+
+### Packaged end-to-end tests (Linux)
 
 ```bash
-npm run build:app
+npm run build
+npx electron-builder --linux dir
+npm run test:e2e:auth:linux
+npm run test:e2e:retail:linux
+npm run test:e2e:linux
+npm run test:e2e:responsive:linux
 ```
 
-Electron Builder targets Windows NSIS and Linux AppImage/DEB. Actual platform-specific packaging must be verified on the target OS. Windows packaging from Linux may require additional tools or a Windows build machine.
+These tests launch the packaged Linux application and use isolated test data. They are not a replacement for manually testing receipt printers, barcode scanners, Windows installation/upgrade, or the actual shop hardware.
 
-## Security and data
+## Build installers
 
-- Renderer Node integration is disabled and context isolation is enabled.
-- Renderer IPC is exposed only through the narrow preload API.
-- IPC payloads and returned contracts are validated with Zod.
-- Logs are written under Electron's managed logs directory and redact common secret fields.
-- The initial implementation uses Node’s built-in `node:sqlite` API; it has been smoke-tested inside Electron 44 on Linux. Node currently marks this API experimental, so selecting a stable native driver remains a release gate; evaluate `better-sqlite3` and verify native rebuilds for both Windows and Linux before production release.
-- Do not commit credentials, real customer data, local databases or release artifacts.
+### Windows (NSIS x64)
 
-## Current implementation milestone
+On a Linux build machine with network access:
 
-- Local database path: Electron-managed user data directory at `data/counter.sqlite` (one file per counter/device).
-- Migration 1 is checksum-verified; modified historical migration SQL causes startup to fail rather than silently drift the schema.
-- Transaction helper uses `BEGIN IMMEDIATE` and rollback-on-error.
-- Automated tests cover migration idempotency, persistence across close/reopen, rollback, foreign-key/barcode constraints, migration checksum tampering, product CRUD, audit snapshots, duplicate SKU/barcode rejection, archive preservation, unsafe base-unit change prevention, stock receipt/adjustment/write-off, negative-stock prevention, atomic checkout, split payment totals, cash change, idempotency and rollback tests.
-- Verified on the development machine: typecheck, 35 unit tests, lint, formatting, production build, Electron runtime initialization, product/stock/checkout/sales-history UI smoke tests, inclusive/exclusive tax tests, settings persistence and backup/restore integrity tests.
-- Remaining gates: stable SQLite driver decision, normal sandboxed launch, Windows/Linux packaging, and business feature implementation.
+```bash
+npm run build:win
+```
 
-## Requirements documents
+The build prepares the Windows x64 Argon2 native binding and downloads the official Microsoft Visual C++ x64 redistributable into the ignored `build/` directory when it is missing. The installer uses that prerequisite only if the required runtime is not already installed. Do not commit the downloaded redistributable or generated installers.
 
-See `docs/SRS_v1.1.md`, `docs/BRANDING_REQUIREMENTS.md`, `docs/DESIGN_AND_INVENTORY_REQUIREMENTS.md`, `docs/MASTER_CODING_PROMPT_v1.1.md` and `docs/REQUIREMENTS_TRACEABILITY.md`.
+Output: `release/NOUVO POS Cash and Carry Setup <version>.exe`
+
+### Linux
+
+```bash
+npm run build
+npx electron-builder --linux AppImage deb
+```
+
+Output is written to the ignored `release/` directory. Always install and launch the resulting package on a clean target machine before distribution.
+
+## Optional central sync server
+
+The server lives in `sync-server/` and uses Node.js, TypeScript and PostgreSQL. Read [the sync-server guide](sync-server/README.md) before running it. Local integration tests require Docker Compose and a disposable development database.
+
+The sync service binds locally by default. Production deployment requires HTTPS/TLS, protected secret storage, backups, monitoring, recovery procedures and end-to-end acceptance testing. Never expose the development admin UI or a plain-HTTP sync endpoint to the public internet.
+
+## Project structure
+
+- `src/main/` — Electron main-process services, persistence, IPC and business logic
+- `src/preload/` — narrow, context-isolated renderer API
+- `src/renderer/` — Vue UI and styles
+- `src/shared/contracts/` — shared, validated contracts
+- `tests/` — unit and packaged end-to-end tests
+- `sync-server/` — optional central PostgreSQL sync service
+- `docs/` — requirements, architecture, accounting and release documentation
+- `build/` — application icons and installer resources (generated prerequisites are ignored)
+- `release/` — generated installers and packaged applications (ignored)
+
+## Data and security
+
+- Keep real shop data, local SQLite databases, backups, credentials, tokens and environment files out of Git.
+- Renderer Node integration is disabled; context isolation and the preload bridge limit renderer access.
+- Validate IPC inputs and outputs; review permission checks whenever adding a new command or screen.
+- Keep counter tokens separate from the central sync admin token. Store production secrets in the deployment environment/secret manager.
+- Test backup restoration before relying on a backup for recovery.
+- Report suspected security vulnerabilities privately to the repository owner rather than opening a public issue with exploit details.
+
+## Documentation
+
+Start with `docs/ARCHITECTURE.md`, `docs/SRS_v1.1.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/ACCOUNTING_POSTING_MATRIX.md`, and the branding/inventory requirements documents.
+
+## License
+
+No open-source license is declared in this repository yet. All rights remain with the copyright holder unless a license is added explicitly.

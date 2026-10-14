@@ -4,7 +4,7 @@
 
 - Manual stock receipts, stock adjustments and write-offs create balanced accounting journals atomically with their stock movements.
 - Opening stock increases are offset to opening-stock/equity; positive count adjustments use stock-adjustment gain; reductions use inventory shrinkage/write-off expense.
-- Accounting now includes an indirect operating cash-flow reconciliation using net income and changes in inventory, accounts payable, sales tax payable and opening-stock/equity entries.
+- Accounting now includes an indirect cash-flow statement with operating, investing and financing classification using net income and changes in inventory, accounts payable, sales tax payable and opening-stock/equity entries.
 - The reconciliation displays actual cash/clearing movement and any difference rather than hiding an imbalance.
 
 ## Verification

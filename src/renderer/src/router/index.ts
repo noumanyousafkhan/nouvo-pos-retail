@@ -4,6 +4,7 @@ import InventoryView from '@/views/InventoryView.vue';
 import CheckoutView from '@/views/CheckoutView.vue';
 import SalesHistoryView from '@/views/SalesHistoryView.vue';
 import SettingsView from '@/views/SettingsView.vue';
+import BrandingView from '@/views/BrandingView.vue';
 import LoginView from '@/views/LoginView.vue';
 import SetupView from '@/views/SetupView.vue';
 import ForbiddenView from '@/views/ForbiddenView.vue';
@@ -131,6 +132,17 @@ export const router = createRouter({
         description: 'Sales, stock and financial reporting.',
         module: 'Reports',
         permission: 'reports.view',
+      },
+    },
+    {
+      path: '/branding',
+      name: 'branding',
+      component: BrandingView,
+      meta: {
+        title: 'Branding',
+        description: 'Customize workspace colors and appearance.',
+        module: 'Branding',
+        permission: 'settings.manage',
       },
     },
     {

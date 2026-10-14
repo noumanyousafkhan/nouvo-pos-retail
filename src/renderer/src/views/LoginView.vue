@@ -6,14 +6,21 @@ const router = useRouter();
 const form = reactive({ username: '', password: '' });
 const saving = ref(false);
 const errorMessage = ref('');
+const showPassword = ref(false);
+function readableError(error: unknown): string {
+  if (!(error instanceof Error)) return 'Sign-in failed.';
+  return error.message
+    .replace(/^Error invoking remote method '[^']+': Error: /, '')
+    .replace(/^Error: /, '');
+}
 async function signIn() {
   saving.value = true;
   errorMessage.value = '';
   try {
-    await window.nouvo.login(form);
+    await window.nouvo.login({ username: form.username.trim(), password: form.password });
     await router.replace('/');
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Sign-in failed.';
+    errorMessage.value = readableError(error);
   } finally {
     saving.value = false;
   }
@@ -35,8 +42,7 @@ async function signIn() {
       </div>
       <form class="auth-form" @submit.prevent="signIn">
         <label class="inventory-field"
-          >Username <span>*</span
-          ><input
+          >Username ><input
             v-model="form.username"
             required
             minlength="3"
@@ -46,15 +52,35 @@ async function signIn() {
             placeholder="Enter your username"
         /></label>
         <label class="inventory-field"
-          >Password <span>*</span
-          ><input
-            v-model="form.password"
-            required
-            type="password"
-            maxlength="128"
-            autocomplete="current-password"
-            placeholder="Enter your password"
-        /></label>
+          >Password
+          <div class="auth-password-input">
+            <input
+              v-model="form.password"
+              required
+              :type="showPassword ? 'text' : 'password'"
+              maxlength="128"
+              autocomplete="current-password"
+              placeholder="Enter your password"
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-label="showPassword ? 'Hide password' : 'Show password'"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              <svg v-if="!showPassword" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="m3 3 18 18M10.6 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.8M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.5 0 2.8-.4 4-1"
+                />
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+              </svg>
+            </button></div
+        ></label>
         <BaseButton block type="submit" :loading="saving"
           >Sign in securely <span>→</span></BaseButton
         >

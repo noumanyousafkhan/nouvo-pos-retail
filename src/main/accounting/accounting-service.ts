@@ -620,8 +620,12 @@ export class AccountingService {
     const inventoryChangeMinor = balanceAt('1200', endDate) - balanceAt('1200', openingDate);
     const accountsPayableChangeMinor = balanceAt('2000', openingDate) - balanceAt('2000', endDate);
     const salesTaxPayableChangeMinor = balanceAt('2100', openingDate) - balanceAt('2100', endDate);
-    const openingStockEquityChangeMinor =
-      balanceAt('3000', openingDate) - balanceAt('3000', endDate);
+    const openingStockEquity = this.database
+      .prepare(
+        "SELECT COALESCE(SUM(jl.credit_minor-jl.debit_minor),0) AS amount FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.store_id=? AND a.store_id=? AND a.code='3000' AND je.description LIKE 'Stock receipt:%' AND substr(je.posted_at,1,10) BETWEEN ? AND ?",
+      )
+      .get(this.storeId, this.storeId, startDate, endDate) as { amount: number };
+    const openingStockEquityChangeMinor = openingStockEquity.amount;
     const income = this.getIncomeStatement(startDate, endDate);
     const operatingCashFlowMinor =
       income.netIncomeMinor -
@@ -630,6 +634,24 @@ export class AccountingService {
       salesTaxPayableChangeMinor +
       openingStockEquityChangeMinor;
     const cashMovement = this.getCashMovementStatement(startDate, endDate);
+    const classifiedCashRows = this.database
+      .prepare(
+        "SELECT je.id, COALESCE(SUM(CASE WHEN a.code IN ('1000','1010','1011','1012','1013','1019') THEN jl.debit_minor-jl.credit_minor ELSE 0 END),0) AS cash_delta, MAX(CASE WHEN a.code NOT IN ('1000','1010','1011','1012','1013','1019','1200') AND a.account_type='asset' THEN 1 ELSE 0 END) AS has_investing, MAX(CASE WHEN a.code NOT IN ('1000','1010','1011','1012','1013','1019','2000','2100') AND a.account_type IN ('liability','equity') THEN 1 ELSE 0 END) AS has_financing, MAX(CASE WHEN a.code IN ('1200','2000','2100') OR a.account_type IN ('income','expense') THEN 1 ELSE 0 END) AS has_operating FROM journal_entries je JOIN journal_lines jl ON jl.journal_entry_id=je.id JOIN accounts a ON a.id=jl.account_id WHERE je.store_id=? AND a.store_id=? AND je.source_type IN ('manual','reversal') AND substr(je.posted_at,1,10) BETWEEN ? AND ? GROUP BY je.id HAVING cash_delta<>0",
+      )
+      .all(this.storeId, this.storeId, startDate, endDate) as {
+      cash_delta: number;
+      has_investing: number;
+      has_financing: number;
+      has_operating: number;
+    }[];
+    let investingCashFlowMinor = 0;
+    let financingCashFlowMinor = 0;
+    for (const row of classifiedCashRows) {
+      if (row.has_investing === 1 && row.has_financing === 0 && row.has_operating === 0)
+        investingCashFlowMinor += row.cash_delta;
+      else if (row.has_financing === 1 && row.has_investing === 0 && row.has_operating === 0)
+        financingCashFlowMinor += row.cash_delta;
+    }
     return {
       startDate,
       endDate,
@@ -640,8 +662,14 @@ export class AccountingService {
       salesTaxPayableChangeMinor,
       openingStockEquityChangeMinor,
       operatingCashFlowMinor,
+      investingCashFlowMinor,
+      financingCashFlowMinor,
       cashChangeMinor: cashMovement.netChangeMinor,
-      reconciliationDifferenceMinor: cashMovement.netChangeMinor - operatingCashFlowMinor,
+      reconciliationDifferenceMinor:
+        cashMovement.netChangeMinor -
+        operatingCashFlowMinor -
+        investingCashFlowMinor -
+        financingCashFlowMinor,
     };
   }
 

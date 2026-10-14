@@ -77,6 +77,8 @@ export const IndirectCashFlowStatementSchema = z.object({
   salesTaxPayableChangeMinor: z.number().int(),
   openingStockEquityChangeMinor: z.number().int(),
   operatingCashFlowMinor: z.number().int(),
+  investingCashFlowMinor: z.number().int(),
+  financingCashFlowMinor: z.number().int(),
   cashChangeMinor: z.number().int(),
   reconciliationDifferenceMinor: z.number().int(),
 });

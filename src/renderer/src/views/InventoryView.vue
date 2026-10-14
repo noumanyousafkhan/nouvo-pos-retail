@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import BaseButton from '@/components/base/BaseButton.vue';
 import BaseCard from '@/components/base/BaseCard.vue';
 import PageHeader from '@/components/base/PageHeader.vue';
@@ -22,6 +22,8 @@ const stockReason = ref('Initial stock received');
 const editingId = ref<string | null>(null);
 const errorMessage = ref('');
 const successMessage = ref('');
+let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+let latestProductRequest = 0;
 const form = reactive({
   name: '',
   description: '',
@@ -32,6 +34,7 @@ const form = reactive({
   purchasePrice: '0.00',
   sellingPrice: '0.00',
   taxPercent: '0',
+  initialStockQuantity: '0',
 });
 
 const activeCount = computed(() => products.value.filter((product) => product.isActive).length);
@@ -49,17 +52,21 @@ const toMinor = (value: string) => {
 };
 
 async function loadProducts() {
+  const requestId = ++latestProductRequest;
   loading.value = true;
   errorMessage.value = '';
   try {
-    products.value = await window.nouvo.listProducts({
-      search: search.value,
+    const result = await window.nouvo.listProducts({
+      search: search.value.trim(),
       includeArchived: showArchived.value,
     });
+    if (requestId === latestProductRequest) products.value = result;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Products could not be loaded.';
+    if (requestId === latestProductRequest) {
+      errorMessage.value = error instanceof Error ? error.message : 'Products could not be loaded.';
+    }
   } finally {
-    loading.value = false;
+    if (requestId === latestProductRequest) loading.value = false;
   }
 }
 
@@ -75,6 +82,7 @@ function resetForm() {
     purchasePrice: '0.00',
     sellingPrice: '0.00',
     taxPercent: '0',
+    initialStockQuantity: '0',
   });
   errorMessage.value = '';
 }
@@ -97,6 +105,7 @@ function openEditProduct(product: Product) {
     purchasePrice: (product.purchaseCostMinor / 100).toFixed(2),
     sellingPrice: (product.sellingPriceMinor / 100).toFixed(2),
     taxPercent: (product.taxRateBasisPoints / 100).toString(),
+    initialStockQuantity: '0',
   });
   editorOpen.value = true;
 }
@@ -111,6 +120,15 @@ async function saveProduct() {
     const taxPercent = Number(form.taxPercent);
     if (!Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 100)
       throw new Error('Tax rate must be between 0 and 100 percent.');
+
+    const isEditing = Boolean(editingId.value);
+    const initialQuantity = isEditing ? 0 : Number(form.initialStockQuantity);
+    if (!Number.isFinite(initialQuantity) || initialQuantity < 0 || initialQuantity > 9_000_000)
+      throw new Error('Initial stock must be a valid quantity of 0 or more.');
+    const initialQuantityMilli = Math.round(initialQuantity * 1000);
+    if (Math.abs(initialQuantityMilli / 1000 - initialQuantity) > 0.0000001)
+      throw new Error('Initial stock supports up to three decimal places.');
+
     const barcodes = [
       ...new Set(
         form.barcodesText
@@ -119,7 +137,7 @@ async function saveProduct() {
           .filter(Boolean),
       ),
     ];
-    await window.nouvo.saveProduct({
+    const savedProduct = await window.nouvo.saveProduct({
       ...(editingId.value ? { id: editingId.value } : {}),
       name: form.name,
       description: form.description,
@@ -131,10 +149,29 @@ async function saveProduct() {
       sellingPriceMinor,
       taxRateBasisPoints: Math.round(taxPercent * 100),
     });
+
+    // Close after product creation so a stock-ledger error cannot cause duplicate products on retry.
     editorOpen.value = false;
-    successMessage.value = editingId.value
-      ? 'Product updated successfully.'
-      : 'Product created successfully.';
+    if (!isEditing && initialQuantityMilli > 0) {
+      try {
+        const result = await window.nouvo.recordStockMovement({
+          productId: savedProduct.id,
+          movementType: 'receipt',
+          quantityMilli: initialQuantityMilli,
+          unitCostMinor: purchaseCostMinor,
+          reason: 'Opening stock at product creation',
+        });
+        successMessage.value = `Product created with opening stock: ${(result.quantityMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${savedProduct.baseUnit}.`;
+      } catch (stockError) {
+        successMessage.value = 'Product created successfully.';
+        errorMessage.value =
+          `Product was created, but opening stock was not saved. Use its Stock button to add it. ${stockError instanceof Error ? stockError.message : ''}`.trim();
+      }
+    } else {
+      successMessage.value = isEditing
+        ? 'Product updated successfully.'
+        : 'Product created successfully.';
+    }
     await loadProducts();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Product could not be saved.';
@@ -201,6 +238,11 @@ async function archiveProduct(product: Product) {
   }
 }
 
+watch([search, showArchived], () => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => void loadProducts(), 180);
+});
+
 onMounted(async () => {
   try {
     const settings: BusinessSettings = await window.nouvo.getBusinessSettings();
@@ -260,12 +302,15 @@ onMounted(async () => {
         <form class="inventory-search" @submit.prevent="loadProducts">
           <label class="sr-only" for="product-search">Search products</label>
           <span aria-hidden="true">⌕</span>
-          <input id="product-search" v-model="search" placeholder="Search name, SKU or barcode…" />
+          <input
+            id="product-search"
+            v-model="search"
+            placeholder="Type a product name, SKU or barcode…"
+          />
           <BaseButton type="submit" variant="secondary" :loading="loading">Search</BaseButton>
         </form>
         <label class="inventory-archived-toggle"
-          ><input v-model="showArchived" type="checkbox" @change="loadProducts" /> Include
-          archived</label
+          ><input v-model="showArchived" type="checkbox" /> Include archived</label
         >
       </div>
 
@@ -441,6 +486,22 @@ onMounted(async () => {
               >Selling price (PKR) <span>*</span
               ><input v-model="form.sellingPrice" type="number" min="0" step="0.01" required
             /></label>
+            <label v-if="!editingId" class="inventory-field inventory-field--wide"
+              >Initial stock quantity
+              <input
+                v-model="form.initialStockQuantity"
+                type="number"
+                min="0"
+                max="9000000"
+                step="0.001"
+                inputmode="decimal"
+                placeholder="0"
+              />
+              <small
+                >Optional. Leave at 0 if you will add stock later. Opening stock uses the purchase
+                cost above and is recorded in the stock ledger.</small
+              >
+            </label>
           </div>
           <label class="inventory-field inventory-field--wide"
             >Barcodes <small>One per line; duplicate barcodes are rejected.</small
