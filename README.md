@@ -135,7 +135,7 @@ The sync service binds locally by default. Production deployment requires HTTPS/
 
 ## Documentation
 
-Start with `docs/ARCHITECTURE.md`, `docs/SRS_v1.1.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/ACCOUNTING_POSTING_MATRIX.md`, and the branding/inventory requirements documents. Pack/single-unit stock conversion and safe deletion are described in `docs/PACK_AND_SINGLE_UNIT_INVENTORY.md`. The current initial cigarette catalogue template is in `data/initial-inventory/cigarette-products.csv`; it is reference/import data, not a live database or automatic seed on app startup.
+Start with `docs/ARCHITECTURE.md`, `docs/SRS_v1.1.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/ACCOUNTING_POSTING_MATRIX.md`, and the branding/inventory requirements documents. Pack/single-unit stock conversion and safe deletion are described in `docs/PACK_AND_SINGLE_UNIT_INVENTORY.md`. Product and opening-stock data are intentionally kept out of this application repository; new installations should start with an empty inventory.
 
 ## License
 

@@ -35,9 +35,6 @@ credentials/
 *.log
 logs/
 data/
-!data/
-!data/initial-inventory/
-!data/initial-inventory/*.csv
 
 # Downloaded third-party installer prerequisites (fetched by build:win when needed)
 build/vc_redist.x64.exe
