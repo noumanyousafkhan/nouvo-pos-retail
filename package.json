@@ -24,7 +24,8 @@
     "test:e2e:retail:linux": "xvfb-run -a node tests/e2e/retail-workflow.cjs",
     "test:e2e:responsive:linux": "xvfb-run -a node tests/e2e/responsive-smoke.cjs",
     "build:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "build:win:ci": "npm run build && electron-builder --win nsis --publish never"
+    "build:win:ci": "npm run build && electron-builder --win nsis --publish never",
+    "test:e2e:pack-single:linux": "xvfb-run -a node tests/e2e/pack-single-workflow.cjs"
   },
   "build": {
     "appId": "com.nouvo.pos.cashcarry",

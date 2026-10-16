@@ -1262,6 +1262,18 @@ a:focus-visible {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
 }
+.inventory-field select:disabled {
+  color: #747e94;
+  background: #f0f2f7;
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 1;
+}
+.inventory-unit-help {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.55;
+}
 .inventory-stock-note {
   margin: 0;
   padding: 11px 13px;

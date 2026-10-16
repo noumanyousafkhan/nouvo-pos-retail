@@ -150,7 +150,9 @@ async function saveProduct() {
       );
     }
     const singleSellingPriceMinor =
-      form.singleSellingPrice.trim() === '' ? null : toMinor(form.singleSellingPrice);
+      String(form.singleSellingPrice ?? '').trim() === ''
+        ? null
+        : toMinor(String(form.singleSellingPrice));
     if (singleSellingPriceMinor !== null && packSize < 2)
       throw new Error('Pack size must be greater than 1 to set a single-unit price.');
     const taxPercent = Number(form.taxPercent);
@@ -696,9 +698,12 @@ onMounted(async () => {
             >Quantity unit<select v-model="stockUnit" :disabled="stockMovementType === 'receipt'">
               <option value="pack">Full pack</option>
               <option value="single">Single {{ stockProduct.singleUnitName }}</option></select
-            ><small
-              >Receiving purchases uses packs; adjustments and write-offs can use individual
-              units.</small
+            ><small v-if="stockMovementType === 'receipt'" class="inventory-unit-help"
+              >Pack-only for purchase receipts. Select Stock adjustment or Write-off / damaged above
+              to enable individual-cigarette quantities.</small
+            ><small v-else class="inventory-unit-help"
+              >Choose full packs or individual cigarettes. For an adjustment, use a minus quantity
+              to remove stock and a plus quantity to add stock.</small
             ></label
           >
           <label class="inventory-field"
