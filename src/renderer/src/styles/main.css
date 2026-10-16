@@ -1342,6 +1342,37 @@ a:focus-visible {
   gap: 12px;
   padding: 7px 18px 20px;
 }
+.checkout-product-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.checkout-product-card .checkout-product-tile {
+  width: 100%;
+  flex: 1;
+}
+.checkout-single-button {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #ddd9ff;
+  border-radius: 10px;
+  color: #5148b8;
+  background: #f7f6ff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+}
+.checkout-single-button:hover:not(:disabled) {
+  border-color: #a8a0ff;
+  background: #efedff;
+}
+.checkout-single-button:disabled {
+  cursor: not-allowed;
+  color: #9ba2b1;
+  background: #f5f6f8;
+  border-color: #e7e9ef;
+}
 .checkout-product-tile {
   position: relative;
   display: flex;

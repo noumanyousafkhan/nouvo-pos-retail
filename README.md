@@ -9,7 +9,9 @@ Offline-first desktop point-of-sale software for small cash-and-carry and retail
 - Local-first operation with a SQLite database managed per counter/device.
 - User authentication and role-aware application navigation.
 - Product catalogue, SKU/barcode lookup, categories, stock receipts, adjustments and write-offs.
+- Configurable pack/single-unit selling with shared stock, separate unit prices, safe stock conversion and unit-aware returns.
 - Barcode-first checkout, cart quantities, payment methods, split payments and cash change.
+- Safe product deletion for unused products; archive products with business history to preserve reports and audit trails.
 - Cashier shifts, sales history, receipt preview/printing and sale/line snapshots.
 - Returns and void workflows, purchasing and supplier payments.
 - Sales, stock, margin and accounting reports; accounting journal and reconciliation workflows.
@@ -133,7 +135,7 @@ The sync service binds locally by default. Production deployment requires HTTPS/
 
 ## Documentation
 
-Start with `docs/ARCHITECTURE.md`, `docs/SRS_v1.1.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/ACCOUNTING_POSTING_MATRIX.md`, and the branding/inventory requirements documents.
+Start with `docs/ARCHITECTURE.md`, `docs/SRS_v1.1.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/ACCOUNTING_POSTING_MATRIX.md`, and the branding/inventory requirements documents. Pack/single-unit stock conversion and safe deletion are described in `docs/PACK_AND_SINGLE_UNIT_INVENTORY.md`. The current initial cigarette catalogue template is in `data/initial-inventory/cigarette-products.csv`; it is reference/import data, not a live database or automatic seed on app startup.
 
 ## License
 

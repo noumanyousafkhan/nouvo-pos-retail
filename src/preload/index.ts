@@ -89,6 +89,8 @@ const api: NouvoApi = Object.freeze({
   saveProduct: (input: ProductInput) => ipcRenderer.invoke('inventory:save-product', input),
   archiveProduct: (id: string, reason?: string) =>
     ipcRenderer.invoke('inventory:archive-product', { id, reason }),
+  deleteProduct: (id: string, reason?: string) =>
+    ipcRenderer.invoke('inventory:delete-product', { id, reason }),
   recordStockMovement: (input: StockMovementInput) =>
     ipcRenderer.invoke('inventory:record-stock-movement', input),
   completeSale: (input: CheckoutInput) => ipcRenderer.invoke('checkout:complete-sale', input),

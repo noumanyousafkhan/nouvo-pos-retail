@@ -868,7 +868,7 @@ export class AccountingService {
   private returnedCost(returnId: string, saleId: string): number {
     const row = this.database
       .prepare(
-        "SELECT COALESCE(SUM(ROUND((rl.quantity_milli * COALESCE((SELECT sm.unit_cost_minor FROM stock_movements sm WHERE sm.reference_type = 'sale' AND sm.reference_id = ? AND sm.product_id = rl.product_id ORDER BY sm.created_at LIMIT 1),0)) / 1000.0)),0) AS amount FROM sale_return_lines rl WHERE rl.sale_return_id = ? AND rl.product_id IS NOT NULL",
+        "SELECT COALESCE(SUM(ROUND(((CASE WHEN sl.sale_unit_snapshot = 'single' THEN rl.quantity_milli / CAST(sl.pack_size_snapshot AS REAL) ELSE rl.quantity_milli END) * COALESCE((SELECT sm.unit_cost_minor FROM stock_movements sm WHERE sm.reference_type = 'sale' AND sm.reference_id = ? AND sm.product_id = rl.product_id ORDER BY sm.created_at LIMIT 1),0)) / 1000.0)),0) AS amount FROM sale_return_lines rl JOIN sale_lines sl ON sl.id = rl.original_sale_line_id WHERE rl.sale_return_id = ? AND rl.product_id IS NOT NULL",
       )
       .get(saleId, returnId) as { amount: number };
     return row.amount;

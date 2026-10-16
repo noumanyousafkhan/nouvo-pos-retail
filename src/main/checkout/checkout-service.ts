@@ -15,6 +15,9 @@ interface ProductForSale {
   sku: string | null;
   barcode: string | null;
   base_unit: string;
+  pack_size: number;
+  single_unit_name: string;
+  single_selling_price_minor: number | null;
   selling_price_minor: number;
   purchase_cost_minor: number;
   tax_rate_basis_points: number;
@@ -72,33 +75,89 @@ export class CheckoutService {
           'Business settings were not found. Open Settings and verify the store profile.',
         );
 
-      const mergedItems = new Map<string, number>();
-      for (const item of input.items)
-        mergedItems.set(
-          item.productId,
-          (mergedItems.get(item.productId) ?? 0) + item.quantityMilli,
-        );
+      const mergedItems = new Map<
+        string,
+        { productId: string; saleUnit: 'base' | 'pack' | 'single'; quantityMilli: number }
+      >();
+      for (const item of input.items) {
+        const key = `${item.productId}:${item.saleUnit}`;
+        const existing = mergedItems.get(key);
+        mergedItems.set(key, {
+          productId: item.productId,
+          saleUnit: item.saleUnit,
+          quantityMilli: (existing?.quantityMilli ?? 0) + item.quantityMilli,
+        });
+      }
       const lines: SaleResult['lines'] = [];
-      const stockDeltas: { productId: string; quantityMilli: number; unitCostMinor: number }[] = [];
+      const stockDeltas: {
+        productId: string;
+        quantityMilli: number;
+        unitCostMinor: number;
+        saleUnit: 'base' | 'pack' | 'single';
+        lineUnitCostMinor: number;
+      }[] = [];
+      const linePackSizes: number[] = [];
+      const lineSaleUnits: ('base' | 'pack' | 'single')[] = [];
       let subtotalMinor = 0;
       let taxMinor = 0;
 
-      for (const [productId, quantityMilli] of mergedItems) {
+      for (const item of mergedItems.values()) {
+        const productId = item.productId;
+        const saleUnit = item.saleUnit;
+        const quantityMilli = item.quantityMilli;
         const product = this.database
           .prepare(
-            `SELECT p.id, p.name, p.sku, p.base_unit, p.selling_price_minor, p.purchase_cost_minor, p.tax_rate_basis_points, p.is_active, (SELECT pb.barcode FROM product_barcodes pb WHERE pb.product_id = p.id ORDER BY pb.created_at LIMIT 1) AS barcode FROM products p WHERE p.id = ? AND p.store_id = ?`,
+            `SELECT p.id, p.name, p.sku, p.base_unit, p.pack_size, p.single_unit_name, p.single_selling_price_minor, p.selling_price_minor, p.purchase_cost_minor, p.tax_rate_basis_points, p.is_active, (SELECT pb.barcode FROM product_barcodes pb WHERE pb.product_id = p.id ORDER BY pb.created_at LIMIT 1) AS barcode FROM products p WHERE p.id = ? AND p.store_id = ?`,
           )
           .get(productId, this.storeId) as ProductForSale | undefined;
         if (!product || product.is_active !== 1)
           throw new Error(
             'A cart product is no longer active. Refresh inventory and review the cart.',
           );
+        const resolvedSaleUnit = saleUnit === 'base' && product.pack_size > 1 ? 'pack' : saleUnit;
+        if (
+          resolvedSaleUnit === 'single' &&
+          (product.pack_size < 2 || product.single_selling_price_minor === null)
+        ) {
+          throw new Error(
+            `Set a single-unit selling price for ${product.name} before selling individual units.`,
+          );
+        }
+        if (resolvedSaleUnit === 'pack' && product.pack_size < 2) {
+          throw new Error(`Refresh ${product.name}; it is not configured as a multi-unit pack.`);
+        }
+        if (resolvedSaleUnit === 'single' && 1000 % product.pack_size !== 0) {
+          throw new Error(
+            `Single-unit stock conversion for ${product.name} is not exact with this pack size. Choose a compatible pack size first.`,
+          );
+        }
+        if (resolvedSaleUnit === 'single' && quantityMilli % 1000 !== 0) {
+          throw new Error(
+            `Individual units of ${product.name} must be sold in whole-number quantities.`,
+          );
+        }
+        const stockQuantityMilli =
+          resolvedSaleUnit === 'single' ? quantityMilli / product.pack_size : quantityMilli;
+        const saleUnitPriceMinor =
+          resolvedSaleUnit === 'single'
+            ? product.single_selling_price_minor!
+            : product.selling_price_minor;
+        const lineUnitCostMinor =
+          resolvedSaleUnit === 'single'
+            ? Math.round(product.purchase_cost_minor / product.pack_size)
+            : product.purchase_cost_minor;
+        const saleUnitLabel =
+          resolvedSaleUnit === 'single'
+            ? product.single_unit_name
+            : resolvedSaleUnit === 'pack'
+              ? 'pack'
+              : product.base_unit;
         const balance = this.database
           .prepare(
             'SELECT COALESCE(SUM(quantity_delta_milli), 0) AS quantity FROM stock_movements WHERE product_id = ? AND counter_id = ?',
           )
           .get(productId, this.counterId) as { quantity: number };
-        if (balance.quantity < quantityMilli)
+        if (balance.quantity < stockQuantityMilli)
           throw new Error(
             `Insufficient stock for ${product.name}. Available: ${(balance.quantity / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.base_unit}.`,
           );
@@ -113,16 +172,13 @@ export class CheckoutService {
               'SELECT remaining_quantity_milli AS remainingQuantityMilli FROM counter_stock_allocations WHERE counter_id = ? AND product_id = ?',
             )
             .get(this.counterId, productId) as { remainingQuantityMilli: number } | undefined;
-          if (!allocation || allocation.remainingQuantityMilli < quantityMilli)
+          if (!allocation || allocation.remainingQuantityMilli < stockQuantityMilli)
             throw new Error(
               `Allocated stock is insufficient for ${product.name}. Available allocation: ${((allocation?.remainingQuantityMilli ?? 0) / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.base_unit}. Sync with the store manager before selling more.`,
             );
         }
 
-        const enteredPrice = safeMinor(
-          (product.selling_price_minor * quantityMilli) / 1000,
-          'Line price',
-        );
+        const enteredPrice = safeMinor((saleUnitPriceMinor * quantityMilli) / 1000, 'Line price');
         const lineTax =
           store.tax_behavior === 'inclusive'
             ? safeMinor(
@@ -143,13 +199,22 @@ export class CheckoutService {
           productId,
           productName: product.name,
           productCode: product.sku ?? product.barcode,
-          unit: product.base_unit,
+          unit: saleUnitLabel,
           quantityMilli,
-          unitPriceMinor: product.selling_price_minor,
+          stockQuantityMilli,
+          unitPriceMinor: saleUnitPriceMinor,
           taxMinor: lineTax,
           lineTotalMinor: lineTotal,
         });
-        stockDeltas.push({ productId, quantityMilli, unitCostMinor: product.purchase_cost_minor });
+        stockDeltas.push({
+          productId,
+          quantityMilli: stockQuantityMilli,
+          unitCostMinor: product.purchase_cost_minor,
+          saleUnit: resolvedSaleUnit,
+          lineUnitCostMinor,
+        });
+        linePackSizes.push(product.pack_size);
+        lineSaleUnits.push(resolvedSaleUnit);
       }
 
       const totalMinor = safeMinor(subtotalMinor + taxMinor, 'Sale total');
@@ -236,9 +301,14 @@ export class CheckoutService {
           changeDueMinor,
         );
       const insertLine = this.database.prepare(
-        'INSERT INTO sale_lines (id, sale_id, product_id, product_name_snapshot, product_code_snapshot, unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor, unit_cost_minor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)',
+        'INSERT INTO sale_lines (id, sale_id, product_id, product_name_snapshot, product_code_snapshot, unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor, unit_cost_minor, pack_size_snapshot, sale_unit_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)',
       );
-      for (const line of lines)
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index]!;
+        const saleUnit = lineSaleUnits[index]!;
+        const stockDelta = stockDeltas.find(
+          (delta) => delta.productId === line.productId && delta.saleUnit === saleUnit,
+        );
         insertLine.run(
           randomUUID(),
           saleId,
@@ -250,8 +320,11 @@ export class CheckoutService {
           line.unitPriceMinor,
           line.taxMinor,
           line.lineTotalMinor,
-          stockDeltas.find((delta) => delta.productId === line.productId)?.unitCostMinor ?? 0,
+          stockDelta?.lineUnitCostMinor ?? 0,
+          linePackSizes[index] ?? 1,
+          saleUnit,
         );
+      }
       const insertPayment = this.database.prepare(
         'INSERT INTO sale_payments (id, sale_id, payment_method, amount_minor, reference, amount_tendered_minor, change_due_minor) VALUES (?, ?, ?, ?, ?, ?, ?)',
       );

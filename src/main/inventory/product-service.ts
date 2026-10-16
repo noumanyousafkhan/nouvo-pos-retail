@@ -32,6 +32,16 @@ export class ProductService {
     if (new Set(normalizedBarcodes).size !== normalizedBarcodes.length) {
       throw new Error('A barcode was entered more than once for this product.');
     }
+    if (input.packSize > 1 && 1000 % input.packSize !== 0) {
+      throw new Error(
+        'For exact single-unit stock tracking, the pack size must divide 1,000 (for example 10, 20, 25 or 50).',
+      );
+    }
+    if (input.singleSellingPriceMinor !== null && input.packSize < 2) {
+      throw new Error(
+        'Set a pack size greater than 1 before configuring a single-unit selling price.',
+      );
+    }
     const normalized: ProductInput = { ...input, barcodes: normalizedBarcodes };
     const id = input.id ?? randomUUID();
 
@@ -50,6 +60,23 @@ export class ProductService {
           if (hasStockHistory || hasSaleHistory) {
             throw new Error(
               'Base unit cannot be changed after stock movements or sales exist for this product. Use a controlled unit-conversion workflow.',
+            );
+          }
+        }
+        if (before && before.packSize !== input.packSize) {
+          const hasSingleSales = this.database
+            .prepare(
+              "SELECT 1 AS found FROM sale_lines WHERE product_id = ? AND sale_unit_snapshot = 'single' LIMIT 1",
+            )
+            .get(before.id);
+          if (hasSingleSales) {
+            throw new Error(
+              'Pack size cannot be changed after individual-unit sales exist because those sales use the original conversion. Archive this product and create a new one for a different pack size.',
+            );
+          }
+          if (before.stockOnHandMilli % 1000 !== 0) {
+            throw new Error(
+              'Pack size cannot be changed while partial packs or individual units remain. Reconcile stock to whole packs first.',
             );
           }
         }
@@ -109,6 +136,77 @@ export class ProductService {
       }
       throw error;
     }
+  }
+
+  delete(rawPayload: unknown, reason?: unknown): void {
+    const { id } = ProductIdPayloadSchema.parse(rawPayload);
+    const safeReason = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+    runInTransaction(this.database, () => {
+      const before = this.repository.findById(this.storeId, id);
+      if (!before) throw new Error('Product was not found. Refresh inventory and try again.');
+      const historyChecks: { label: string; sql: string }[] = [
+        {
+          label: 'stock movements',
+          sql: 'SELECT 1 AS found FROM stock_movements WHERE product_id = ? LIMIT 1',
+        },
+        {
+          label: 'sales or returns',
+          sql: 'SELECT 1 AS found FROM sale_lines WHERE product_id = ? LIMIT 1',
+        },
+        {
+          label: 'purchase orders',
+          sql: 'SELECT 1 AS found FROM purchase_order_lines WHERE product_id = ? LIMIT 1',
+        },
+        {
+          label: 'purchase receipts',
+          sql: 'SELECT 1 AS found FROM purchase_receipt_lines WHERE product_id = ? LIMIT 1',
+        },
+        {
+          label: 'purchase returns',
+          sql: 'SELECT 1 AS found FROM purchase_return_lines WHERE product_id = ? LIMIT 1',
+        },
+      ];
+      for (const check of historyChecks) {
+        if (this.database.prepare(check.sql).get(id)) {
+          throw new Error(
+            `This product has ${check.label}; archive it instead so financial and audit history stays intact.`,
+          );
+        }
+      }
+      if (before.stockOnHandMilli !== 0) {
+        throw new Error(
+          'This product still has stock. Remove or reconcile its stock before permanent deletion.',
+        );
+      }
+      if (
+        this.database
+          .prepare(
+            "SELECT 1 AS found FROM outbox_events WHERE aggregate_type = 'product' AND aggregate_id = ? AND status IN ('acknowledged', 'in_flight') LIMIT 1",
+          )
+          .get(id)
+      ) {
+        throw new Error(
+          'This product has synchronized or is being sent to the central system; archive it instead of permanently deleting it.',
+        );
+      }
+      this.database
+        .prepare(
+          "DELETE FROM outbox_events WHERE aggregate_type = 'product' AND aggregate_id = ? AND status <> 'acknowledged'",
+        )
+        .run(id);
+      this.repository.delete(this.storeId, id);
+      this.database
+        .prepare(
+          "INSERT INTO audit_events (id, store_id, action, entity_type, entity_id, before_json, after_json, reason) VALUES (?, ?, 'product.deleted', 'product', ?, ?, NULL, ?)",
+        )
+        .run(
+          randomUUID(),
+          this.storeId,
+          id,
+          JSON.stringify(before),
+          safeReason || 'Permanently deleted unused product',
+        );
+    });
   }
 
   archive(rawPayload: unknown, reason?: unknown): void {

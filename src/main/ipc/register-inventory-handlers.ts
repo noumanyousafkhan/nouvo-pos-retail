@@ -13,6 +13,7 @@ import { requirePermission } from '../auth/auth-service';
 const listProductsChannel = 'inventory:list-products';
 const saveProductChannel = 'inventory:save-product';
 const archiveProductChannel = 'inventory:archive-product';
+const deleteProductChannel = 'inventory:delete-product';
 const recordStockMovementChannel = 'inventory:record-stock-movement';
 
 function productService(): ProductService {
@@ -55,5 +56,17 @@ export function registerInventoryIpcHandlers(): void {
         : undefined;
     productService().archive(payload, reason);
     return { archived: true };
+  });
+
+  ipcMain.removeHandler(deleteProductChannel);
+  ipcMain.handle(deleteProductChannel, (_event, rawPayload: unknown) => {
+    requirePermission(getLocalDatabaseConnection(), 'inventory.manage');
+    const payload = ProductIdPayloadSchema.parse(rawPayload);
+    const reason =
+      typeof rawPayload === 'object' && rawPayload !== null && 'reason' in rawPayload
+        ? (rawPayload as { reason?: unknown }).reason
+        : undefined;
+    productService().delete(payload, reason);
+    return { deleted: true };
   });
 }

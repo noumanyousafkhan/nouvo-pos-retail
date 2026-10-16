@@ -16,6 +16,9 @@ export const ProductInputSchema = z.object({
   sku: z.string().trim().max(80).default(''),
   barcodes: z.array(barcodeSchema).max(20).default([]),
   baseUnit: z.string().trim().min(1).max(32).default('piece'),
+  packSize: z.number().int().min(1).max(1000).default(1),
+  singleUnitName: z.string().trim().min(1).max(32).default('unit'),
+  singleSellingPriceMinor: z.number().int().min(0).max(9_000_000_000_000).nullable().default(null),
   purchaseCostMinor: z.number().int().min(0).max(9_000_000_000_000),
   sellingPriceMinor: z.number().int().min(0).max(9_000_000_000_000),
   taxRateBasisPoints: z.number().int().min(0).max(10000).default(0),
@@ -29,6 +32,9 @@ export const ProductSchema = z.object({
   sku: z.string().nullable(),
   barcodes: z.array(z.string()),
   baseUnit: z.string(),
+  packSize: z.number().int().min(1).max(1000).default(1),
+  singleUnitName: z.string().trim().min(1).max(32).default('unit'),
+  singleSellingPriceMinor: z.number().int().nullable().default(null),
   purchaseCostMinor: z.number().int(),
   sellingPriceMinor: z.number().int(),
   taxRateBasisPoints: z.number().int(),
@@ -53,4 +59,5 @@ export interface ProductApi extends StockApi, CheckoutApi, SalesApi, SettingsApi
   listProducts(query?: Partial<ProductListQuery>): Promise<Product[]>;
   saveProduct(input: ProductInput): Promise<Product>;
   archiveProduct(id: string, reason?: string): Promise<void>;
+  deleteProduct(id: string, reason?: string): Promise<void>;
 }

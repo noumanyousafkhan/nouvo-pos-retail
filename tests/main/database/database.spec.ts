@@ -60,6 +60,9 @@ describe('local SQLite database foundation', () => {
         { version: 13, name: 'partial_purchase_receiving_and_discrepancies' },
         { version: 14, name: 'supplier_invoice_reconciliation' },
         { version: 15, name: 'sale_line_cost_snapshots' },
+        { version: 16, name: 'pack_and_single_selling_units' },
+        { version: 17, name: 'configurable_single_unit_labels' },
+        { version: 18, name: 'sale_unit_type_snapshots' },
       ]);
       expect(
         database.connection
@@ -69,7 +72,7 @@ describe('local SQLite database foundation', () => {
       applyMigrations(database.connection);
       expect(
         database.connection.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get(),
-      ).toEqual({ count: 15 });
+      ).toEqual({ count: 18 });
     } finally {
       database.close();
     }

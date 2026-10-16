@@ -101,6 +101,99 @@ describe('product service', () => {
     ).toEqual([{ action: 'product.created' }, { action: 'product.updated' }]);
   });
 
+  it('saves configurable pack size and an optional single-unit price', () => {
+    const { service } = setup();
+    const product = service.save({
+      name: 'Cigarette Pack',
+      baseUnit: 'pack',
+      packSize: 20,
+      singleUnitName: 'cigarette',
+      singleSellingPriceMinor: null,
+      purchaseCostMinor: 23630,
+      sellingPriceMinor: 25000,
+      barcodes: ['89601884'],
+    });
+    expect(product).toMatchObject({
+      baseUnit: 'pack',
+      packSize: 20,
+      singleUnitName: 'cigarette',
+      singleSellingPriceMinor: null,
+      purchaseCostMinor: 23630,
+      sellingPriceMinor: 25000,
+    });
+    expect(() =>
+      service.save({
+        name: 'Unsupported Pack',
+        packSize: 30,
+        singleSellingPriceMinor: 1200,
+        purchaseCostMinor: 100,
+        sellingPriceMinor: 200,
+      }),
+    ).toThrow(/pack size must divide 1,000/i);
+  });
+
+  it('allows pack-size changes for whole-pack stock but blocks changes with partial packs', () => {
+    const { database, storeId, counterId, service } = setup();
+    const fullPacks = service.save({
+      name: 'Whole Packs',
+      baseUnit: 'pack',
+      packSize: 20,
+      singleUnitName: 'cigarette',
+      purchaseCostMinor: 20000,
+      sellingPriceMinor: 25000,
+    });
+    const partialPacks = service.save({
+      name: 'Partial Packs',
+      baseUnit: 'pack',
+      packSize: 20,
+      singleUnitName: 'cigarette',
+      purchaseCostMinor: 20000,
+      sellingPriceMinor: 25000,
+    });
+    const insertMovement = database.connection.prepare(
+      "INSERT INTO stock_movements (id, store_id, counter_id, product_id, movement_type, quantity_delta_milli, reason) VALUES (?, ?, ?, ?, 'receipt', ?, 'Pack-size edit test')",
+    );
+    insertMovement.run(randomUUID(), storeId, counterId, fullPacks.id, 10000);
+    insertMovement.run(randomUUID(), storeId, counterId, partialPacks.id, 9950);
+    const changePackSize = (product: typeof fullPacks) =>
+      service.save({
+        id: product.id,
+        name: product.name,
+        baseUnit: 'pack',
+        packSize: 25,
+        singleUnitName: 'cigarette',
+        singleSellingPriceMinor: null,
+        purchaseCostMinor: product.purchaseCostMinor,
+        sellingPriceMinor: product.sellingPriceMinor,
+        barcodes: product.barcodes,
+        taxRateBasisPoints: 0,
+      });
+    expect(changePackSize(fullPacks).packSize).toBe(25);
+    expect(() => changePackSize(partialPacks)).toThrow(/partial packs or individual units remain/i);
+  });
+
+  it('permanently deletes only unused products and blocks products with stock history', () => {
+    const { service, database, storeId, counterId } = setup();
+    const unused = service.save({ name: 'Unused', purchaseCostMinor: 10, sellingPriceMinor: 20 });
+    service.delete({ id: unused.id }, 'Created by test');
+    expect(
+      service.list({ includeArchived: true }).some((product) => product.id === unused.id),
+    ).toBe(false);
+
+    const used = service.save({ name: 'Used', purchaseCostMinor: 10, sellingPriceMinor: 20 });
+    database.connection
+      .prepare(
+        "INSERT INTO stock_movements (id, store_id, counter_id, product_id, movement_type, quantity_delta_milli, reason) VALUES (?, ?, ?, ?, 'receipt', 1000, 'Test receipt')",
+      )
+      .run(randomUUID(), storeId, counterId, used.id);
+    expect(() => service.delete({ id: used.id }, 'Must preserve history')).toThrow(
+      /stock movements.*archive it instead/i,
+    );
+    expect(service.list({ includeArchived: true }).some((product) => product.id === used.id)).toBe(
+      true,
+    );
+  });
+
   it('archives instead of deleting a product and preserves the row', () => {
     const { database, service } = setup();
     const product = service.save({

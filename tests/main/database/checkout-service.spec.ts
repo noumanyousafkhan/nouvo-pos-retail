@@ -92,6 +92,42 @@ describe('checkout service', () => {
     ).toEqual({ quantity: 3500 });
   });
 
+  it('sells individual cigarettes at their own price and deducts only the correct pack fraction', () => {
+    const { database, productId, counterId, service } = setup();
+    database.connection
+      .prepare(
+        'UPDATE products SET pack_size = 20, single_selling_price_minor = 1200, selling_price_minor = 25000, tax_rate_basis_points = 0 WHERE id = ?',
+      )
+      .run(productId);
+    const sale = service.complete({
+      idempotencyKey: randomUUID(),
+      items: [{ productId, quantityMilli: 3000, saleUnit: 'single' }],
+      paymentLines: [{ paymentMethod: 'cash', amountMinor: 3600, amountTenderedMinor: 4000 }],
+    });
+    expect(sale.totalMinor).toBe(3600);
+    expect(sale.lines[0]).toMatchObject({
+      unit: 'unit',
+      quantityMilli: 3000,
+      stockQuantityMilli: 150,
+      unitPriceMinor: 1200,
+      lineTotalMinor: 3600,
+    });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT COALESCE(SUM(quantity_delta_milli), 0) AS quantity FROM stock_movements WHERE product_id = ? AND counter_id = ?',
+        )
+        .get(productId, counterId),
+    ).toEqual({ quantity: 4850 });
+    expect(
+      database.connection
+        .prepare(
+          'SELECT pack_size_snapshot AS packSize, sale_unit_snapshot AS saleUnit FROM sale_lines WHERE sale_id = ?',
+        )
+        .get(sale.id),
+    ).toEqual({ packSize: 20, saleUnit: 'single' });
+  });
+
   it('calculates tax-inclusive prices and snapshots the configured receipt settings', () => {
     const { database, storeId, productId, service } = setup();
     database.connection

@@ -46,6 +46,9 @@ const ProductPayloadSchema = z
     sku: z.string().nullable(),
     barcodes: z.array(z.string()),
     baseUnit: z.string().min(1),
+    packSize: z.number().int().min(1).max(1000).default(1),
+    singleUnitName: z.string().trim().min(1).max(32).default('unit'),
+    singleSellingPriceMinor: z.number().int().nonnegative().nullable().default(null),
     purchaseCostMinor: z.number().int().nonnegative(),
     sellingPriceMinor: z.number().int().nonnegative(),
     taxRateBasisPoints: z.number().int().min(0).max(10000),
@@ -64,6 +67,7 @@ const SalePayloadSchema = z
           .object({
             productId: z.string().uuid(),
             quantityMilli: z.number().int().positive(),
+            stockQuantityMilli: z.number().int().positive().optional(),
           })
           .passthrough(),
       )
@@ -81,6 +85,7 @@ const ReturnPayloadSchema = z
           .object({
             productId: z.string().uuid(),
             quantityMilli: z.number().int().positive(),
+            stockQuantityMilli: z.number().int().positive().optional(),
           })
           .passthrough(),
       )
@@ -323,7 +328,10 @@ async function applyEvent(
     }
     const quantities = new Map<string, number>();
     for (const line of sale.data.lines)
-      quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + line.quantityMilli);
+      quantities.set(
+        line.productId,
+        (quantities.get(line.productId) ?? 0) + (line.stockQuantityMilli ?? line.quantityMilli),
+      );
     const consolidatedLines = [...quantities.entries()].map(([productId, quantityMilli]) => ({
       productId,
       quantityMilli,
@@ -402,8 +410,15 @@ async function applyEvent(
       throw new DomainConflict('This return has already been synchronized under another event ID.');
 
     const quantities = new Map<string, number>();
-    for (const line of returned.data.lines)
+    const stockQuantities = new Map<string, number>();
+    for (const line of returned.data.lines) {
       quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + line.quantityMilli);
+      stockQuantities.set(
+        line.productId,
+        (stockQuantities.get(line.productId) ?? 0) +
+          (line.stockQuantityMilli ?? line.quantityMilli),
+      );
+    }
     for (const [productId, quantityMilli] of quantities) {
       const soldQuantity = originalSale.data.lines
         .filter((line) => line.productId === productId)
@@ -442,13 +457,14 @@ async function applyEvent(
         'INSERT INTO sync_return_lines (counter_id,return_id,sale_id,product_id,quantity_milli) VALUES ($1,$2,$3,$4,$5)',
         [counterId, returned.data.returnId, returned.data.saleId, productId, quantityMilli],
       );
+      const stockQuantityMilli = stockQuantities.get(productId) ?? quantityMilli;
       await client.query(
         'UPDATE sync_inventory SET on_hand_quantity_milli=on_hand_quantity_milli+$3, updated_at=now() WHERE store_id=$1 AND product_id=$2',
-        [storeId, productId, quantityMilli],
+        [storeId, productId, stockQuantityMilli],
       );
       await client.query(
         'INSERT INTO sync_allocations (store_id,counter_id,product_id,allocated_quantity_milli,remaining_quantity_milli) VALUES ($1,$2,$3,$4,$4) ON CONFLICT (counter_id,product_id) DO UPDATE SET allocated_quantity_milli=sync_allocations.allocated_quantity_milli+EXCLUDED.allocated_quantity_milli, remaining_quantity_milli=sync_allocations.remaining_quantity_milli+EXCLUDED.remaining_quantity_milli, updated_at=now()',
-        [storeId, counterId, productId, quantityMilli],
+        [storeId, counterId, productId, stockQuantityMilli],
       );
     }
     return;

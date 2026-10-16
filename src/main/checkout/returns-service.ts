@@ -25,6 +25,8 @@ interface SaleLineRow {
   product_id: string | null;
   product_name_snapshot: string;
   unit_snapshot: string;
+  pack_size_snapshot: number;
+  sale_unit_snapshot: 'base' | 'pack' | 'single';
   quantity_milli: number;
   unit_price_minor: number;
   discount_minor: number;
@@ -108,7 +110,7 @@ export class ReturnsService {
       }
       const originalLines = this.database
         .prepare(
-          'SELECT id, product_id, product_name_snapshot, unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor FROM sale_lines WHERE sale_id = ? ORDER BY rowid',
+          'SELECT id, product_id, product_name_snapshot, unit_snapshot, pack_size_snapshot, sale_unit_snapshot, quantity_milli, unit_price_minor, discount_minor, tax_minor, line_total_minor FROM sale_lines WHERE sale_id = ? ORDER BY rowid',
         )
         .all(sale.id) as unknown as SaleLineRow[];
       if (!originalLines.length) throw new Error('The original sale has no returnable lines.');
@@ -259,7 +261,9 @@ export class ReturnsService {
               this.storeId,
               this.counterId,
               line.original.product_id,
-              line.quantityMilli,
+              line.original.unit_snapshot === 'cigarette'
+                ? line.quantityMilli / line.original.pack_size_snapshot
+                : line.quantityMilli,
               returnId,
               `${input.operation === 'void' ? 'Voided sale' : 'Returned sale'} ${sale.receipt_number}: ${input.reason}`,
               this.actorUserId,
@@ -275,7 +279,9 @@ export class ReturnsService {
                 'UPDATE counter_stock_allocations SET remaining_quantity_milli = remaining_quantity_milli + ?, updated_at = ? WHERE counter_id = ? AND product_id = ?',
               )
               .run(
-                line.quantityMilli,
+                line.original.unit_snapshot === 'cigarette'
+                  ? line.quantityMilli / line.original.pack_size_snapshot
+                  : line.quantityMilli,
                 new Date().toISOString(),
                 this.counterId,
                 line.original.product_id,
@@ -381,6 +387,10 @@ export class ReturnsService {
               saleLineId: line.original.id,
               productId: line.original.product_id,
               quantityMilli: line.quantityMilli,
+              stockQuantityMilli:
+                line.original.unit_snapshot === 'cigarette'
+                  ? line.quantityMilli / line.original.pack_size_snapshot
+                  : line.quantityMilli,
               refundTotalMinor: line.refundTotalMinor,
             })),
           }),

@@ -1,0 +1,13 @@
+name,sku,barcode,category,base_unit,pack_size,single_unit_name,purchase_price_pkr,sell_price_pkr,single_price_pkr,opening_packs
+Capstan Red Pall Mall Pack,CIG-CAP-RED-PM,89601884,Cigarettes,pack,20,cigarette,236.30,250.00,,10
+Benson Pack,CIG-BENSON,95010526,Cigarettes,pack,20,cigarette,269.60,300.00,,10
+Dunhill Light Pack,CIG-DUNHILL-LIGHT,89601426,Cigarettes,pack,20,cigarette,567.30,600.00,,10
+Dunhill Special Pack,CIG-DUNHILL-SPECIAL,89600047,Cigarettes,pack,20,cigarette,568.50,600.00,,10
+Gold Leaf Pack,CIG-GOLD-LEAF,95010557,Cigarettes,pack,20,cigarette,480.20,500.00,,10
+Capstan White Pack,CIG-CAP-WHITE,89600078,Cigarettes,pack,20,cigarette,236.10,250.00,,10
+Capstan Select Pack,CIG-CAP-SELECT,95010816,Cigarettes,pack,20,cigarette,156.90,250.00,,10
+John Player Pack,CIG-JOHN-PLAYER,95010687,Cigarettes,pack,20,cigarette,235.80,250.00,,10
+Capstan Elite Pack,CIG-CAP-ELITE,89601846,Cigarettes,pack,20,cigarette,247.00,270.00,,10
+Capstan International Pack,CIG-CAP-INTERNATIONAL,95010670,Cigarettes,pack,20,cigarette,181.40,200.00,,10
+Gold Flake Pack,CIG-GOLD-FLAKE,95010588,Cigarettes,pack,20,cigarette,236.30,250.00,,10
+Marlboro Crafted Pack,CIG-MARLBORO-CRAFTED,89600665,Cigarettes,pack,20,cigarette,171.00,190.00,,10

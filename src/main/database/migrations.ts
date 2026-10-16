@@ -711,6 +711,30 @@ export const migrations: Migration[] = [
       ALTER TABLE sale_lines ADD COLUMN unit_cost_minor INTEGER CHECK (unit_cost_minor IS NULL OR unit_cost_minor >= 0);
     `,
   },
+  {
+    version: 16,
+    name: 'pack_and_single_selling_units',
+    sql: `
+      ALTER TABLE products ADD COLUMN pack_size INTEGER NOT NULL DEFAULT 1 CHECK (pack_size BETWEEN 1 AND 1000);
+      ALTER TABLE products ADD COLUMN single_selling_price_minor INTEGER CHECK (single_selling_price_minor IS NULL OR single_selling_price_minor >= 0);
+      ALTER TABLE sale_lines ADD COLUMN pack_size_snapshot INTEGER NOT NULL DEFAULT 1 CHECK (pack_size_snapshot BETWEEN 1 AND 1000);
+    `,
+  },
+  {
+    version: 17,
+    name: 'configurable_single_unit_labels',
+    sql: `
+      ALTER TABLE products ADD COLUMN single_unit_name TEXT NOT NULL DEFAULT 'unit' CHECK (length(trim(single_unit_name)) BETWEEN 1 AND 32);
+    `,
+  },
+  {
+    version: 18,
+    name: 'sale_unit_type_snapshots',
+    sql: `
+      ALTER TABLE sale_lines ADD COLUMN sale_unit_snapshot TEXT NOT NULL DEFAULT 'base' CHECK (sale_unit_snapshot IN ('base','pack','single'));
+      UPDATE sale_lines SET sale_unit_snapshot = CASE WHEN pack_size_snapshot > 1 AND unit_snapshot = 'pack' THEN 'pack' WHEN pack_size_snapshot > 1 THEN 'single' ELSE 'base' END;
+    `,
+  },
 ];
 
 export const CURRENT_SCHEMA_VERSION = migrations[migrations.length - 1]?.version ?? 0;

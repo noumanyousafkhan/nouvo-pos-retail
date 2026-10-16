@@ -10,6 +10,9 @@ interface ProductRow {
   sku: string | null;
   barcodes: string | null;
   baseUnit: string;
+  packSize: number;
+  singleUnitName: string;
+  singleSellingPriceMinor: number | null;
   purchaseCostMinor: number;
   sellingPriceMinor: number;
   taxRateBasisPoints: number;
@@ -28,6 +31,9 @@ function mapProduct(row: ProductRow): Product {
     sku: row.sku,
     barcodes: row.barcodes ? row.barcodes.split('\u001f') : [],
     baseUnit: row.baseUnit,
+    packSize: row.packSize,
+    singleUnitName: row.singleUnitName,
+    singleSellingPriceMinor: row.singleSellingPriceMinor,
     purchaseCostMinor: row.purchaseCostMinor,
     sellingPriceMinor: row.sellingPriceMinor,
     taxRateBasisPoints: row.taxRateBasisPoints,
@@ -41,8 +47,8 @@ function mapProduct(row: ProductRow): Product {
 const productSelect = `
   SELECT p.id, p.name, p.description, c.name AS categoryName, p.sku,
          (SELECT group_concat(barcode, char(31)) FROM product_barcodes pb WHERE pb.product_id = p.id) AS barcodes,
-         p.base_unit AS baseUnit, p.purchase_cost_minor AS purchaseCostMinor,
-         p.selling_price_minor AS sellingPriceMinor, p.tax_rate_basis_points AS taxRateBasisPoints,
+         p.base_unit AS baseUnit, p.pack_size AS packSize, p.single_unit_name AS singleUnitName, p.single_selling_price_minor AS singleSellingPriceMinor,
+         p.purchase_cost_minor AS purchaseCostMinor, p.selling_price_minor AS sellingPriceMinor, p.tax_rate_basis_points AS taxRateBasisPoints,
          p.is_active AS isActive,
          COALESCE((SELECT SUM(sm.quantity_delta_milli) FROM stock_movements sm WHERE sm.product_id = p.id AND sm.counter_id = ?), 0) AS stockOnHandMilli,
          p.created_at AS createdAt, p.updated_at AS updatedAt
@@ -87,7 +93,7 @@ export class ProductRepository {
     if (input.id) {
       this.database
         .prepare(
-          `UPDATE products SET category_id = ?, sku = ?, name = ?, description = ?, base_unit = ?, purchase_cost_minor = ?, selling_price_minor = ?, tax_rate_basis_points = ?, updated_at = ? WHERE id = ? AND store_id = ?`,
+          `UPDATE products SET category_id = ?, sku = ?, name = ?, description = ?, base_unit = ?, pack_size = ?, single_unit_name = ?, single_selling_price_minor = ?, purchase_cost_minor = ?, selling_price_minor = ?, tax_rate_basis_points = ?, updated_at = ? WHERE id = ? AND store_id = ?`,
         )
         .run(
           categoryId,
@@ -95,6 +101,9 @@ export class ProductRepository {
           input.name,
           input.description || null,
           input.baseUnit,
+          input.packSize,
+          input.singleUnitName,
+          input.singleSellingPriceMinor,
           input.purchaseCostMinor,
           input.sellingPriceMinor,
           input.taxRateBasisPoints,
@@ -106,7 +115,7 @@ export class ProductRepository {
     } else {
       this.database
         .prepare(
-          `INSERT INTO products (id, store_id, category_id, sku, name, description, base_unit, purchase_cost_minor, selling_price_minor, tax_rate_basis_points, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (id, store_id, category_id, sku, name, description, base_unit, pack_size, single_unit_name, single_selling_price_minor, purchase_cost_minor, selling_price_minor, tax_rate_basis_points, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -116,6 +125,9 @@ export class ProductRepository {
           input.name,
           input.description || null,
           input.baseUnit,
+          input.packSize,
+          input.singleUnitName,
+          input.singleSellingPriceMinor,
           input.purchaseCostMinor,
           input.sellingPriceMinor,
           input.taxRateBasisPoints,
@@ -131,6 +143,12 @@ export class ProductRepository {
     const product = this.findById(storeId, productId);
     if (!product) throw new Error('Saved product could not be reloaded.');
     return product;
+  }
+
+  delete(storeId: string, id: string): void {
+    this.database.prepare('DELETE FROM product_barcodes WHERE product_id = ?').run(id);
+    this.database.prepare('DELETE FROM counter_stock_allocations WHERE product_id = ?').run(id);
+    this.database.prepare('DELETE FROM products WHERE store_id = ? AND id = ?').run(storeId, id);
   }
 
   archive(storeId: string, id: string): void {

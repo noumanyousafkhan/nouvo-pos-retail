@@ -77,9 +77,9 @@ async function main() {
     await productDialog.locator('input[placeholder="Optional unique code"]').fill('RETAIL-E2E-001');
     await productDialog.locator('input[placeholder="e.g. Grocery"]').fill('Grocery');
     await productDialog.locator('input[placeholder="piece, kg, pack"]').fill('piece');
-    await productDialog.locator('input[type="number"]').nth(0).fill('0');
-    await productDialog.locator('input[type="number"]').nth(1).fill('5.00');
-    await productDialog.locator('input[type="number"]').nth(2).fill('11.00');
+    await productDialog.getByLabel(/Tax rate/).fill('0');
+    await productDialog.getByLabel(/Purchase cost/).fill('5.00');
+    await productDialog.getByLabel(/Selling price/).fill('11.00');
     await productDialog
       .locator('textarea[placeholder="Scan or type barcode values"]')
       .fill('990000000001');

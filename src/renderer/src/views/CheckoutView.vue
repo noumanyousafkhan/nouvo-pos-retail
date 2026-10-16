@@ -11,7 +11,7 @@ import type { CashSession } from '@shared/contracts/cash-sessions';
 import type { SalesReport } from '@shared/contracts/reports';
 import { RouterLink } from 'vue-router';
 
-type CartLine = { product: Product; quantityMilli: number };
+type CartLine = { product: Product; quantityMilli: number; saleUnit: 'base' | 'pack' | 'single' };
 type PaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'mobile_wallet' | 'other';
 type PaymentLine = {
   key: number;
@@ -50,9 +50,35 @@ const moneyToMinor = (value: string) => {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? Math.round((number + Number.EPSILON) * 100) : 0;
 };
-const cartCount = computed(() => cart.value.reduce((sum, line) => sum + line.quantityMilli, 0));
+const pluralizeUnit = (unit: string) => {
+  if (/(s|x|z|ch|sh)$/i.test(unit)) return `${unit}es`;
+  if (/[^aeiou]y$/i.test(unit)) return `${unit.slice(0, -1)}ies`;
+  return `${unit}s`;
+};
+const cartCount = computed(() =>
+  cart.value.reduce(
+    (sum, line) =>
+      sum +
+      (line.saleUnit === 'single'
+        ? line.quantityMilli
+        : line.saleUnit === 'pack'
+          ? line.quantityMilli * line.product.packSize
+          : line.quantityMilli),
+    0,
+  ),
+);
+function lineUnitPriceMinor(line: CartLine): number {
+  return line.saleUnit === 'single'
+    ? (line.product.singleSellingPriceMinor ?? 0)
+    : line.product.sellingPriceMinor;
+}
+function stockQuantityMilli(line: CartLine): number {
+  return line.saleUnit === 'single'
+    ? line.quantityMilli / line.product.packSize
+    : line.quantityMilli;
+}
 function lineSubtotalMinor(line: CartLine): number {
-  const enteredPrice = Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000);
+  const enteredPrice = Math.round((lineUnitPriceMinor(line) * line.quantityMilli) / 1000);
   const tax =
     taxBehavior.value === 'inclusive'
       ? Math.round(
@@ -63,7 +89,7 @@ function lineSubtotalMinor(line: CartLine): number {
   return taxBehavior.value === 'inclusive' ? enteredPrice - tax : enteredPrice;
 }
 function lineTaxMinor(line: CartLine): number {
-  const enteredPrice = Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000);
+  const enteredPrice = Math.round((lineUnitPriceMinor(line) * line.quantityMilli) / 1000);
   return taxBehavior.value === 'inclusive'
     ? Math.round(
         (enteredPrice * line.product.taxRateBasisPoints) /
@@ -73,7 +99,7 @@ function lineTaxMinor(line: CartLine): number {
 }
 function lineTotalMinor(line: CartLine): number {
   return taxBehavior.value === 'inclusive'
-    ? Math.round((line.product.sellingPriceMinor * line.quantityMilli) / 1000)
+    ? Math.round((lineUnitPriceMinor(line) * line.quantityMilli) / 1000)
     : lineSubtotalMinor(line) + lineTaxMinor(line);
 }
 const cartTotals = computed(() => {
@@ -153,23 +179,45 @@ watch(search, (value) => {
   }, 100);
 });
 
-function addToCart(product: Product) {
+function addToCart(product: Product, requestedUnit?: 'base' | 'pack' | 'single') {
   errorMessage.value = '';
   if (!product.isActive) return;
-  const existing = cart.value.find((line) => line.product.id === product.id);
+  const saleUnit = requestedUnit ?? (product.packSize > 1 ? 'pack' : 'base');
+  if (saleUnit === 'single' && product.singleSellingPriceMinor === null) {
+    errorMessage.value = `Set the single-unit selling price for ${product.name} in Inventory first.`;
+    return;
+  }
+  if (saleUnit === 'single' && 1000 % product.packSize !== 0) {
+    errorMessage.value = `Pack size for ${product.name} needs adjustment before exact single-unit sales can be enabled.`;
+    return;
+  }
+  const existing = cart.value.find(
+    (line) => line.product.id === product.id && line.saleUnit === saleUnit,
+  );
   const nextQuantity = (existing?.quantityMilli ?? 0) + 1000;
-  if (nextQuantity > product.stockOnHandMilli) {
+  const requiredStock = saleUnit === 'single' ? nextQuantity / product.packSize : nextQuantity;
+  const stockAlreadyInOtherLines = cart.value
+    .filter((line) => line.product.id === product.id && line.saleUnit !== saleUnit)
+    .reduce((sum, line) => sum + stockQuantityMilli(line), 0);
+  if (requiredStock + stockAlreadyInOtherLines > product.stockOnHandMilli) {
     errorMessage.value = `Not enough ${product.name} in this counter's stock.`;
     return;
   }
   if (existing) existing.quantityMilli = nextQuantity;
-  else cart.value.push({ product, quantityMilli: 1000 });
+  else cart.value.push({ product, quantityMilli: 1000, saleUnit });
+}
+
+function addSingleToCart(product: Product) {
+  addToCart(product, 'single');
 }
 
 function changeQuantity(line: CartLine, rawValue: string) {
   const quantity = Number(rawValue);
   if (!Number.isFinite(quantity) || quantity <= 0) {
-    cart.value = cart.value.filter((candidate) => candidate.product.id !== line.product.id);
+    cart.value = cart.value.filter(
+      (candidate) =>
+        candidate.product.id !== line.product.id || candidate.saleUnit !== line.saleUnit,
+    );
     return;
   }
   const quantityMilli = Math.round(quantity * 1000);
@@ -177,8 +225,17 @@ function changeQuantity(line: CartLine, rawValue: string) {
     errorMessage.value = 'Quantity supports up to three decimal places.';
     return;
   }
-  if (quantityMilli > line.product.stockOnHandMilli) {
-    errorMessage.value = `Available stock for ${line.product.name} is ${(line.product.stockOnHandMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })}.`;
+  if (line.saleUnit === 'single' && !Number.isInteger(quantity)) {
+    errorMessage.value = 'Individual cigarettes must be sold in whole-number quantities.';
+    return;
+  }
+  const otherLinesStock = cart.value
+    .filter((candidate) => candidate.product.id === line.product.id && candidate !== line)
+    .reduce((sum, candidate) => sum + stockQuantityMilli(candidate), 0);
+  const requiredStock =
+    line.saleUnit === 'single' ? quantityMilli / line.product.packSize : quantityMilli;
+  if (requiredStock + otherLinesStock > line.product.stockOnHandMilli) {
+    errorMessage.value = `Available stock for ${line.product.name} is ${line.product.stockOnHandMilli / 1000} packs.`;
     return;
   }
   line.quantityMilli = quantityMilli;
@@ -193,8 +250,10 @@ function handleQuantityChange(line: CartLine, event: Event) {
   changeQuantity(line, (event.target as HTMLInputElement).value);
 }
 
-function removeFromCart(productId: string) {
-  cart.value = cart.value.filter((line) => line.product.id !== productId);
+function removeFromCart(productId: string, saleUnit: CartLine['saleUnit']) {
+  cart.value = cart.value.filter(
+    (line) => line.product.id !== productId || line.saleUnit !== saleUnit,
+  );
 }
 
 async function searchOrScan() {
@@ -221,7 +280,16 @@ function openPayment() {
     errorMessage.value = 'Add at least one product before checkout.';
     return;
   }
-  if (cart.value.some((line) => line.quantityMilli > line.product.stockOnHandMilli)) {
+  if (
+    cart.value.some(
+      (line) =>
+        stockQuantityMilli(line) +
+          cart.value
+            .filter((other) => other.product.id === line.product.id && other !== line)
+            .reduce((sum, other) => sum + stockQuantityMilli(other), 0) >
+        line.product.stockOnHandMilli,
+    )
+  ) {
     errorMessage.value = 'Cart stock has changed. Refresh inventory and review the quantities.';
     return;
   }
@@ -265,6 +333,7 @@ async function completeCheckout() {
       items: cart.value.map((line) => ({
         productId: line.product.id,
         quantityMilli: line.quantityMilli,
+        saleUnit: line.saleUnit,
       })),
       paymentLines: paymentLines.value.map((line) => ({
         paymentMethod: line.method,
@@ -400,7 +469,10 @@ onMounted(async () => {
               >
                 <span>{{ product.name.slice(0, 1).toUpperCase() }}</span
                 ><strong>{{ product.name }}</strong
-                ><small>{{ formatMoney(product.sellingPriceMinor) }}</small>
+                ><small
+                  >{{ formatMoney(product.sellingPriceMinor) }} /
+                  {{ product.packSize > 1 ? 'pack' : product.baseUnit }}</small
+                >
               </button>
             </div>
           </section>
@@ -413,34 +485,53 @@ onMounted(async () => {
             <p>Create a product in Inventory, then receive stock before selling it.</p>
           </div>
           <div v-else class="checkout-product-grid checkout-product-grid--scroll">
-            <button
-              v-for="product in products"
-              :key="product.id"
-              class="checkout-product-tile"
-              type="button"
-              :disabled="!product.isActive || product.stockOnHandMilli <= 0"
-              @click="addToCart(product)"
-            >
-              <span class="checkout-product-symbol">{{
-                product.name.slice(0, 1).toUpperCase()
-              }}</span>
-              <strong>{{ product.name }}</strong>
-              <small>{{ product.sku || product.barcodes[0] || 'No code' }}</small>
-              <span class="checkout-product-price">{{
-                formatMoney(product.sellingPriceMinor)
-              }}</span>
-              <span
-                class="checkout-product-stock"
-                :class="product.stockOnHandMilli > 0 ? 'has-stock' : 'no-stock'"
-                >{{
-                  (product.stockOnHandMilli / 1000).toLocaleString('en-PK', {
-                    maximumFractionDigits: 3,
-                  })
-                }}
-                {{ product.baseUnit }} available</span
+            <div v-for="product in products" :key="product.id" class="checkout-product-card">
+              <button
+                class="checkout-product-tile"
+                type="button"
+                :disabled="!product.isActive || product.stockOnHandMilli <= 0"
+                @click="addToCart(product)"
               >
-              <span class="checkout-add-icon">＋</span>
-            </button>
+                <span class="checkout-product-symbol">{{
+                  product.name.slice(0, 1).toUpperCase()
+                }}</span>
+                <strong>{{ product.name }}</strong>
+                <small>{{ product.sku || product.barcodes[0] || 'No code' }}</small>
+                <span class="checkout-product-price"
+                  >{{ formatMoney(product.sellingPriceMinor) }} /
+                  {{ product.packSize > 1 ? 'pack' : product.baseUnit }}</span
+                >
+                <span
+                  class="checkout-product-stock"
+                  :class="product.stockOnHandMilli > 0 ? 'has-stock' : 'no-stock'"
+                >
+                  {{
+                    product.packSize > 1
+                      ? `${Math.floor(product.stockOnHandMilli / 1000)} packs · ${Math.floor((product.stockOnHandMilli * product.packSize) / 1000)} ${pluralizeUnit(product.singleUnitName)} total`
+                      : `${(product.stockOnHandMilli / 1000).toLocaleString('en-PK', { maximumFractionDigits: 3 })} ${product.baseUnit} available`
+                  }}
+                </span>
+                <span class="checkout-add-icon">＋</span>
+              </button>
+              <button
+                v-if="product.packSize > 1"
+                class="checkout-single-button"
+                type="button"
+                :disabled="
+                  !product.isActive ||
+                  product.stockOnHandMilli <= 0 ||
+                  product.singleSellingPriceMinor === null
+                "
+                @click="addSingleToCart(product)"
+              >
+                + Single ·
+                {{
+                  product.singleSellingPriceMinor === null
+                    ? 'Price not set'
+                    : formatMoney(product.singleSellingPriceMinor)
+                }}
+              </button>
+            </div>
           </div>
         </BaseCard>
       </section>
@@ -463,19 +554,29 @@ onMounted(async () => {
             <p>Choose products from the catalogue or scan a barcode to start an order.</p>
           </div>
           <div v-else class="checkout-cart-lines">
-            <article v-for="line in cart" :key="line.product.id" class="checkout-cart-line">
+            <article
+              v-for="line in cart"
+              :key="`${line.product.id}:${line.saleUnit}`"
+              class="checkout-cart-line"
+            >
               <div class="checkout-cart-line-main">
                 <div>
                   <strong>{{ line.product.name }}</strong
                   ><small
-                    >{{ formatMoney(line.product.sellingPriceMinor) }} /
-                    {{ line.product.baseUnit }}</small
+                    >{{ formatMoney(lineUnitPriceMinor(line)) }} /
+                    {{
+                      line.saleUnit === 'single'
+                        ? 'cigarette'
+                        : line.saleUnit === 'pack'
+                          ? 'pack'
+                          : line.product.baseUnit
+                    }}</small
                   >
                 </div>
                 <button
                   type="button"
-                  :aria-label="`Remove ${line.product.name}`"
-                  @click="removeFromCart(line.product.id)"
+                  :aria-label="`Remove ${line.product.name} ${line.saleUnit}`"
+                  @click="removeFromCart(line.product.id, line.saleUnit)"
                 >
                   ×
                 </button>
@@ -485,8 +586,8 @@ onMounted(async () => {
                   ><span class="sr-only">Quantity for {{ line.product.name }}</span
                   ><input
                     type="number"
-                    min="0.001"
-                    step="0.001"
+                    :min="line.saleUnit === 'single' ? 1 : 0.001"
+                    :step="line.saleUnit === 'single' ? 1 : 0.001"
                     :value="(line.quantityMilli / 1000).toString()"
                     @change="handleQuantityChange(line, $event)" /></label
                 ><strong>{{ formatMoney(lineTotalMinor(line)) }}</strong>

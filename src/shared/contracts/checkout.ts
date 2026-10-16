@@ -7,6 +7,7 @@ export const CheckoutInputSchema = z.object({
       z.object({
         productId: z.string().uuid(),
         quantityMilli: z.number().int().min(1).max(9_000_000_000),
+        saleUnit: z.enum(['base', 'pack', 'single']).default('base'),
       }),
     )
     .min(1)
@@ -30,6 +31,7 @@ export const SaleLineResultSchema = z.object({
   productCode: z.string().nullable(),
   unit: z.string(),
   quantityMilli: z.number().int(),
+  stockQuantityMilli: z.number().int().optional(),
   unitPriceMinor: z.number().int(),
   taxMinor: z.number().int(),
   lineTotalMinor: z.number().int(),
