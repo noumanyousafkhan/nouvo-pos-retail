@@ -33,6 +33,10 @@ async function main() {
       .fill('QA-Temporary-Password-2026!');
     await page.getByRole('button', { name: /Create owner and open POS/ }).click();
     await page.getByRole('heading', { name: 'Good to see you.' }).waitFor();
+    await page.locator('.dashboard-module-link').filter({ hasText: 'Business branding' }).click();
+    await page.getByRole('heading', { name: 'Branding', exact: true }).waitFor();
+    await page.locator('.sidebar-nav .nav-link').filter({ hasText: 'Overview' }).click();
+    await page.getByRole('heading', { name: 'Good to see you.' }).waitFor();
     await page.locator('.sidebar-nav .nav-link').filter({ hasText: 'Inventory' }).click();
     await page
       .getByRole('button', { name: /Add product/ })
@@ -42,13 +46,14 @@ async function main() {
     await form.locator('input[placeholder="e.g. Basmati Rice 5kg"]').fill('Capstan QA Pack');
     await form.locator('input[placeholder="Optional unique code"]').fill('CAPSTAN-QA');
     await form.locator('input[placeholder="e.g. Grocery"]').fill('Cigarettes');
-    await form.locator('input[placeholder="piece, kg, pack"]').fill('pack');
+    await form.locator('select[aria-label="Stock setup"]').selectOption('pack');
+    await form.locator('input[placeholder="e.g. pack, carton"]').fill('pack');
     await form.getByLabel(/Units per pack/).fill('20');
     await form.getByLabel(/Name of one unit/).fill('cigarette');
     await form.getByLabel(/Single-unit selling price/).fill('15');
     await form.getByLabel(/Purchase cost/).fill('236.30');
     await form.getByLabel(/^Selling price/).fill('250');
-    await form.locator('textarea[placeholder="Scan or type barcode values"]').fill('896018849991');
+    await form.locator('textarea[placeholder="Scan or type barcode"]').fill('896018849991');
     await form.getByRole('button', { name: 'Create product' }).click();
     await page.getByRole('status').getByText('Product created successfully.').waitFor();
     let product = await page.evaluate(

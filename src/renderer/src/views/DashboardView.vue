@@ -87,7 +87,7 @@ const modules = [
     title: 'Business branding',
     detail: 'Store identity, tax and receipt settings',
     tone: 'peach',
-    to: '/settings',
+    to: '/branding',
   },
   {
     number: '04',

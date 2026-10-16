@@ -21,6 +21,7 @@ const stockUnit = ref<'pack' | 'single'>('pack');
 const stockUnitCost = ref('0.00');
 const stockReason = ref('Initial stock received');
 const editingId = ref<string | null>(null);
+const productMode = ref<'unit' | 'pack'>('unit');
 const errorMessage = ref('');
 const successMessage = ref('');
 let searchDebounce: ReturnType<typeof setTimeout> | undefined;
@@ -89,6 +90,7 @@ async function loadProducts() {
 
 function resetForm() {
   editingId.value = null;
+  productMode.value = 'unit';
   Object.assign(form, {
     name: '',
     description: '',
@@ -115,6 +117,7 @@ function openNewProduct() {
 function openEditProduct(product: Product) {
   resetForm();
   editingId.value = product.id;
+  productMode.value = product.packSize > 1 ? 'pack' : 'unit';
   Object.assign(form, {
     name: product.name,
     description: product.description,
@@ -143,14 +146,14 @@ async function saveProduct() {
   try {
     const purchaseCostMinor = toMinor(form.purchasePrice);
     const sellingPriceMinor = toMinor(form.sellingPrice);
-    const packSize = Number(form.packSize);
+    const packSize = productMode.value === 'pack' ? Number(form.packSize) : 1;
     if (!Number.isInteger(packSize) || packSize < 1 || packSize > 1000 || 1000 % packSize !== 0) {
       throw new Error(
         'Pack size must be a whole number that divides 1,000 (for example 10, 20, 25 or 50) so single-unit stock remains exact.',
       );
     }
     const singleSellingPriceMinor =
-      String(form.singleSellingPrice ?? '').trim() === ''
+      productMode.value !== 'pack' || String(form.singleSellingPrice ?? '').trim() === ''
         ? null
         : toMinor(String(form.singleSellingPrice));
     if (singleSellingPriceMinor !== null && packSize < 2)
@@ -317,10 +320,22 @@ async function archiveProduct(product: Product) {
   }
 }
 
+watch(productMode, (value) => {
+  if (value === 'unit') {
+    form.packSize = '1';
+    form.singleSellingPrice = '';
+  } else {
+    if (Number(form.packSize) < 2) form.packSize = '20';
+    if (!form.baseUnit.trim() || form.baseUnit === 'piece') form.baseUnit = 'pack';
+    if (!form.singleUnitName.trim() || form.singleUnitName === 'unit')
+      form.singleUnitName = 'piece';
+  }
+});
+
 watch(
   () => form.packSize,
   (value) => {
-    if (Number(value) === 1) {
+    if (productMode.value === 'pack' && Number(value) === 1) {
       form.singleUnitName = 'unit';
       form.singleSellingPrice = '';
     }
@@ -539,16 +554,25 @@ onMounted(async () => {
           <div v-if="errorMessage" class="inventory-alert inventory-alert--error" role="alert">
             {{ errorMessage }}
           </div>
-          <label class="inventory-field inventory-field--wide"
-            >Product name <span>*</span
-            ><input
-              v-model="form.name"
-              required
-              maxlength="180"
-              autofocus
-              placeholder="e.g. Basmati Rice 5kg"
-          /></label>
           <div class="inventory-form-grid">
+            <div class="inventory-section-heading">PRODUCT IDENTIFICATION</div>
+            <label class="inventory-field"
+              ><span class="inventory-field-label">Product name <b>*</b></span
+              ><input
+                v-model="form.name"
+                required
+                maxlength="180"
+                autofocus
+                placeholder="e.g. Basmati Rice 5kg"
+            /></label>
+            <label class="inventory-field"
+              ><span class="inventory-field-label">Barcode</span
+              ><textarea
+                v-model="form.barcodesText"
+                rows="1"
+                placeholder="Scan or type barcode"
+              /><small>One per line; duplicate barcodes are rejected.</small></label
+            >
             <label class="inventory-field"
               >SKU / Internal code<input
                 v-model="form.sku"
@@ -561,11 +585,29 @@ onMounted(async () => {
                 maxlength="100"
                 placeholder="e.g. Grocery"
             /></label>
+            <div class="inventory-section-heading">STOCK UNIT SETUP</div>
+            <label class="inventory-field inventory-field--wide"
+              ><span class="inventory-field-label">Stock setup <b>*</b></span
+              ><select v-model="productMode" aria-label="Stock setup">
+                <option value="unit">Single unit only</option>
+                <option value="pack">Pack and individual unit</option></select
+              ><small
+                >Choose whether this product is tracked only as one item type, or can also be sold
+                as individual units from a pack.</small
+              ></label
+            >
             <label class="inventory-field"
-              >Base unit <span>*</span
-              ><input v-model="form.baseUnit" required maxlength="32" placeholder="piece, kg, pack"
+              ><span class="inventory-field-label"
+                >{{ productMode === 'pack' ? 'Pack unit name' : 'Stock unit name' }} <b>*</b></span
+              ><input
+                v-model="form.baseUnit"
+                required
+                maxlength="32"
+                :placeholder="
+                  productMode === 'pack' ? 'e.g. pack, carton' : 'e.g. packet, bottle, piece'
+                "
             /></label>
-            <label class="inventory-field"
+            <label v-if="productMode === 'pack'" class="inventory-field"
               >Name of one unit<input
                 v-model="form.singleUnitName"
                 maxlength="32"
@@ -573,17 +615,19 @@ onMounted(async () => {
                 :disabled="Number(form.packSize) < 2"
               /><small>Used for individual sales and stock adjustments.</small></label
             >
-            <label class="inventory-field"
-              >Units per pack<input
+            <label v-if="productMode === 'pack'" class="inventory-field"
+              ><span class="inventory-field-label">Units per pack <b>*</b></span
+              ><input
                 v-model="form.packSize"
                 type="number"
                 min="1"
                 max="1000"
                 step="1"
+                placeholder="0"
                 required
               /><small>Use 1 for ordinary products; use 20 for a pack of 20 units.</small></label
             >
-            <label class="inventory-field"
+            <label v-if="productMode === 'pack'" class="inventory-field"
               >Single-unit selling price (PKR)<input
                 v-model="form.singleSellingPrice"
                 type="number"
@@ -593,8 +637,10 @@ onMounted(async () => {
                 :disabled="Number(form.packSize) < 2"
               /><small>Optional. Can be set or changed later.</small></label
             >
+            <div class="inventory-section-heading">PRICING & TAX</div>
             <label class="inventory-field"
-              >Tax rate (%)<input
+              ><span class="inventory-field-label">Tax rate (%) <b>*</b></span
+              ><input
                 v-model="form.taxPercent"
                 type="number"
                 min="0"
@@ -603,15 +649,27 @@ onMounted(async () => {
                 required
             /></label>
             <label class="inventory-field"
-              >Purchase cost (PKR) <span>*</span
+              ><span class="inventory-field-label"
+                >{{
+                  productMode === 'pack'
+                    ? 'Purchase cost per pack (PKR)'
+                    : 'Purchase cost per unit (PKR)'
+                }}
+                <b>*</b></span
               ><input v-model="form.purchasePrice" type="number" min="0" step="0.01" required
             /></label>
             <label class="inventory-field"
-              >Selling price (PKR) <span>*</span
+              ><span class="inventory-field-label"
+                >{{
+                  productMode === 'pack'
+                    ? 'Selling price per pack (PKR)'
+                    : 'Selling price per unit (PKR)'
+                }}
+                <b>*</b></span
               ><input v-model="form.sellingPrice" type="number" min="0" step="0.01" required
             /></label>
             <label v-if="!editingId" class="inventory-field inventory-field--wide"
-              >Initial stock quantity
+              >{{ productMode === 'pack' ? 'Initial stock (packs)' : 'Initial stock (units)' }}
               <input
                 v-model="form.initialStockQuantity"
                 type="number"
@@ -622,19 +680,18 @@ onMounted(async () => {
                 placeholder="0"
               />
               <small
-                >Optional. Leave at 0 if you will add stock later. Opening stock uses the purchase
-                cost above and is recorded in the stock ledger.</small
+                >Optional. Leave at 0 if you will add stock later.
+                {{
+                  productMode === 'pack'
+                    ? 'Enter the number of full packs.'
+                    : 'Enter the number of stock units.'
+                }}
+                Opening stock uses the purchase cost above and is recorded in the stock
+                ledger.</small
               >
             </label>
           </div>
-          <label class="inventory-field inventory-field--wide"
-            >Barcodes <small>One per line; duplicate barcodes are rejected.</small
-            ><textarea
-              v-model="form.barcodesText"
-              rows="3"
-              placeholder="Scan or type barcode values"
-            />
-          </label>
+          <div class="inventory-section-heading">ADDITIONAL DETAILS</div>
           <label class="inventory-field inventory-field--wide"
             >Description<textarea
               v-model="form.description"
@@ -687,7 +744,7 @@ onMounted(async () => {
             {{ errorMessage }}
           </div>
           <label class="inventory-field"
-            >Movement type <span>*</span
+            ><span class="inventory-field-label">Movement type <b>*</b></span
             ><select v-model="stockMovementType">
               <option value="receipt">Receive stock</option>
               <option value="adjustment">Stock adjustment</option>
@@ -707,17 +764,19 @@ onMounted(async () => {
             ></label
           >
           <label class="inventory-field"
-            >{{
-              stockMovementType === 'adjustment'
-                ? `Quantity change (+/-)${stockUnit === 'single' ? ' in cigarettes' : ''}`
-                : `Quantity${stockUnit === 'single' ? ' in cigarettes' : ''}`
-            }}
-            <span>*</span
+            ><span class="inventory-field-label"
+              >{{
+                stockMovementType === 'adjustment'
+                  ? `Quantity change (+/-)${stockUnit === 'single' ? ' in cigarettes' : ''}`
+                  : `Quantity${stockUnit === 'single' ? ' in cigarettes' : ''}`
+              }}
+              <b>*</b></span
             ><input
               v-model="stockQuantity"
               type="number"
               :min="stockMovementType === 'adjustment' ? undefined : '0.001'"
               :step="stockUnit === 'single' ? 1 : 0.001"
+              placeholder="0"
               required
           /></label>
           <label v-if="stockMovementType === 'receipt'" class="inventory-field"
@@ -729,7 +788,7 @@ onMounted(async () => {
               required
           /></label>
           <label class="inventory-field"
-            >Reason / reference <span>*</span
+            ><span class="inventory-field-label">Reason / reference <b>*</b></span
             ><textarea
               v-model="stockReason"
               rows="2"
