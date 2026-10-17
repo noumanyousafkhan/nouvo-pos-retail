@@ -78,9 +78,13 @@ async function main() {
     const adjust = page.getByRole('dialog', { name: /Update stock/ });
     await adjust.locator('select').nth(0).selectOption('adjustment');
     await adjust.locator('select').nth(1).selectOption('single');
-    await adjust.locator('input[type="number"]').fill('-1');
+    const removeStock = adjust.getByRole('button', { name: /Remove stock/ });
+    await removeStock.waitFor();
+    await removeStock.click();
+    await adjust.locator('input[type="number"]').fill('1');
     await adjust.locator('textarea').fill('QA remove one cigarette');
     await adjust.getByRole('button', { name: 'Save stock movement' }).click();
+    await adjust.waitFor({ state: 'hidden' });
     await page
       .getByRole('status')
       .getByText(/Stock saved/)
@@ -90,9 +94,7 @@ async function main() {
     );
     if (product.stockOnHandMilli !== 9950)
       throw new Error('Single-unit adjustment failed: ' + product.stockOnHandMilli);
-    console.log(
-      'PASS single price saves and quantity-unit selector deducts one cigarette correctly',
-    );
+    console.log('PASS visible Remove stock control deducts one cigarette correctly');
     await page.locator('.sidebar-nav .nav-link').filter({ hasText: 'Cashier shifts' }).click();
     await page.getByRole('heading', { name: 'Cashier shifts' }).waitFor();
     await page.getByLabel('Starting cash in drawer').fill('1000');

@@ -16,6 +16,7 @@ const editorOpen = ref(false);
 const stockEditorOpen = ref(false);
 const stockProduct = ref<Product | null>(null);
 const stockMovementType = ref<'receipt' | 'adjustment' | 'write_off'>('receipt');
+const adjustmentDirection = ref<'add' | 'remove'>('add');
 const stockQuantity = ref('1');
 const stockUnit = ref<'pack' | 'single'>('pack');
 const stockUnitCost = ref('0.00');
@@ -227,11 +228,13 @@ async function saveProduct() {
 function openStockEditor(product: Product) {
   stockProduct.value = product;
   stockMovementType.value = 'receipt';
+  adjustmentDirection.value = 'add';
   stockUnit.value = 'pack';
   stockQuantity.value = '1';
   stockUnitCost.value = (product.purchaseCostMinor / 100).toFixed(2);
   stockReason.value = '';
   errorMessage.value = '';
+  successMessage.value = '';
   stockEditorOpen.value = true;
 }
 
@@ -242,8 +245,10 @@ async function saveStockMovement() {
   successMessage.value = '';
   try {
     const quantity = Number(stockQuantity.value);
-    if (!Number.isFinite(quantity) || quantity === 0 || Math.abs(quantity) > 9_000_000) {
-      throw new Error('Enter a non-zero quantity with at most three decimal places.');
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 9_000_000) {
+      throw new Error(
+        'Enter a quantity greater than zero with at most three decimal places. Use the Add or Remove control for stock adjustments.',
+      );
     }
     if (
       stockUnit.value === 'single' &&
@@ -258,12 +263,19 @@ async function saveStockMovement() {
         'This pack size cannot be converted to exact single-unit stock with the current stock precision.',
       );
     }
-    const quantityMilli =
+    const absoluteQuantityMilli =
       stockUnit.value === 'single'
         ? Math.round((quantity * 1000) / stockProduct.value.packSize)
         : Math.round(quantity * 1000);
-    if (quantityMilli === 0) throw new Error('Quantity is too small to record.');
-    if (stockUnit.value === 'pack' && Math.abs(quantityMilli / 1000 - quantity) > 0.0000001) {
+    const quantityMilli =
+      stockMovementType.value === 'adjustment' && adjustmentDirection.value === 'remove'
+        ? -absoluteQuantityMilli
+        : absoluteQuantityMilli;
+    if (absoluteQuantityMilli === 0) throw new Error('Quantity is too small to record.');
+    if (
+      stockUnit.value === 'pack' &&
+      Math.abs(absoluteQuantityMilli / 1000 - quantity) > 0.0000001
+    ) {
       throw new Error('Pack quantity supports up to three decimal places.');
     }
     const unitCostMinor =
@@ -759,24 +771,58 @@ onMounted(async () => {
               >Pack-only for purchase receipts. Select Stock adjustment or Write-off / damaged above
               to enable individual-cigarette quantities.</small
             ><small v-else class="inventory-unit-help"
-              >Choose full packs or individual cigarettes. For an adjustment, use a minus quantity
-              to remove stock and a plus quantity to add stock.</small
+              >Choose full packs or individual cigarettes. For an adjustment, select Add stock or
+              Remove stock below and enter a positive quantity.</small
             ></label
           >
+          <div
+            v-if="stockMovementType === 'adjustment'"
+            class="inventory-field inventory-adjustment-direction"
+          >
+            <span class="inventory-field-label">Adjustment direction <b>*</b></span>
+            <div
+              class="inventory-adjustment-options"
+              role="group"
+              aria-label="Adjustment direction"
+            >
+              <button
+                type="button"
+                class="inventory-adjustment-option"
+                :class="{ 'is-selected': adjustmentDirection === 'add' }"
+                :aria-pressed="adjustmentDirection === 'add'"
+                @click="adjustmentDirection = 'add'"
+              >
+                <span aria-hidden="true">+</span> Add stock
+              </button>
+              <button
+                type="button"
+                class="inventory-adjustment-option inventory-adjustment-option--remove"
+                :class="{ 'is-selected': adjustmentDirection === 'remove' }"
+                :aria-pressed="adjustmentDirection === 'remove'"
+                @click="adjustmentDirection = 'remove'"
+              >
+                <span aria-hidden="true">−</span> Remove stock
+              </button>
+            </div>
+            <small class="inventory-unit-help"
+              >Choose explicitly whether this correction increases or decreases on-hand
+              stock.</small
+            >
+          </div>
           <label class="inventory-field"
             ><span class="inventory-field-label"
               >{{
                 stockMovementType === 'adjustment'
-                  ? `Quantity change (+/-)${stockUnit === 'single' ? ' in cigarettes' : ''}`
-                  : `Quantity${stockUnit === 'single' ? ' in cigarettes' : ''}`
+                  ? `Quantity to ${adjustmentDirection === 'remove' ? 'remove' : 'add'}${stockUnit === 'single' ? ` in ${pluralizeUnit(stockProduct.singleUnitName)}` : ''}`
+                  : `Quantity${stockUnit === 'single' ? ` in ${pluralizeUnit(stockProduct.singleUnitName)}` : ''}`
               }}
               <b>*</b></span
             ><input
               v-model="stockQuantity"
               type="number"
-              :min="stockMovementType === 'adjustment' ? undefined : '0.001'"
+              :min="stockUnit === 'single' ? '1' : '0.001'"
               :step="stockUnit === 'single' ? 1 : 0.001"
-              placeholder="0"
+              placeholder="1"
               required
           /></label>
           <label v-if="stockMovementType === 'receipt'" class="inventory-field"

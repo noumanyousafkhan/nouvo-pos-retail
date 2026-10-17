@@ -1307,6 +1307,53 @@ a:focus-visible {
   cursor: not-allowed;
   opacity: 1;
 }
+.inventory-adjustment-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.inventory-adjustment-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d9e6df;
+  border-radius: 10px;
+  color: #176b45;
+  background: #f5fbf7;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.inventory-adjustment-option > span {
+  font-size: 20px;
+  line-height: 1;
+}
+.inventory-adjustment-option.is-selected {
+  border-color: #269566;
+  background: #e3f6eb;
+  box-shadow: 0 0 0 2px rgb(38 149 102 / 12%);
+}
+.inventory-adjustment-option--remove {
+  border-color: #f0d9d9;
+  color: #b42332;
+  background: #fff7f7;
+}
+.inventory-adjustment-option--remove.is-selected {
+  border-color: #d94854;
+  background: #ffebed;
+  box-shadow: 0 0 0 2px rgb(217 72 84 / 12%);
+}
+.inventory-adjustment-option:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .inventory-unit-help {
   display: block;
   margin-top: 5px;
